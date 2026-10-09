@@ -18,7 +18,10 @@ router.get('/', requireAuth, async (req, res) => {
   if (req.query.q) {
     const geoParams = new URLSearchParams({ q: String(req.query.q).slice(0, 100), limit: '1', appid: key })
     const geoRes = await fetch('https://api.openweathermap.org/geo/1.0/direct?' + geoParams, { signal: AbortSignal.timeout(10000) })
-    if (!geoRes.ok) return res.status(502).json({ message: 'Weather service error. Try again later.' })
+    if (!geoRes.ok) {
+        console.error('OpenWeather geocode failed:', geoRes.status, await geoRes.text())
+        return res.status(502).json({ message: 'Weather service error. Try again later.' })
+    }
     const geo = await geoRes.json()
     if (!geo.length) return res.status(404).json({ message: 'Could not find that destination for weather.' })
     lat = geo[0].lat
@@ -31,7 +34,10 @@ router.get('/', requireAuth, async (req, res) => {
 
   const params = new URLSearchParams({ lat, lon, units: 'metric', appid: key })
   const response = await fetch('https://api.openweathermap.org/data/2.5/forecast?' + params, { signal: AbortSignal.timeout(10000) })
-  if (!response.ok) return res.status(502).json({ message: 'Weather service error. Try again later.' })
+  if (!response.ok) {
+    console.error('OpenWeather forecast failed:', response.status, await response.text())
+    return res.status(502).json({ message: 'Weather service error. Try again later.' })
+  }
   const data = await response.json()
   res.json({ city: { timezone: data.city.timezone }, list: data.list })
 })

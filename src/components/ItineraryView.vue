@@ -18,7 +18,7 @@
 
     <!-- Weather alert: recalculated whenever a stop moves or the weather changes -->
     <div v-if="hasConflict" class="alert alert-warning" data-testid="weather-alert">
-      <strong>Weather alert:</strong> Rain forecast at {{ rainHours }}<span v-if="simulatedWeather"> (simulated forecast)</span>.
+      <strong>Weather alert:</strong> Rain forecast {{ rainHours }}<span v-if="simulatedWeather"> (simulated forecast)</span>.
       Affected: {{ rainConflicts.map(i => shortName(i.name)).join(', ') }}.
       <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
         <template v-if="wishlist.length">
@@ -46,6 +46,9 @@
       </button>
       <button class="btn btn-outline-primary btn-sm" @click="toggleAdd" data-testid="add-stop-toggle">{{ showAdd ? 'Close' : '+ Add stop' }}</button>
       <span class="small text-muted">Re-times your stops to avoid crowds (🔒 preserved stops stay put)</span>
+      <label v-if="isDemo" class="small text-muted ms-auto">
+        <input type="checkbox" v-model="simulateRain" @change="plan = null" class="form-check-input me-1" data-testid="simulate-rain">Simulate rain (demo)
+      </label>
     </div>
 
     <!-- Add a stop -->
@@ -138,8 +141,50 @@
             <label class="small text-muted ms-auto" title="Preserved stops are never moved by suggestions, Plan my day or weather swaps">
               <input type="checkbox" v-model="item.locked" @change="plan = null" class="form-check-input me-1" data-testid="lock-checkbox">🔒 Preserve
             </label>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0" :aria-label="'Edit ' + item.name" @click="startEdit(item)" data-testid="edit-stop">✎</button>
             <button type="button" class="btn btn-sm btn-outline-danger py-0" :aria-label="'Remove ' + item.name" @click="removeStop(item)" data-testid="remove-stop">✕</button>
           </div>
+
+          <form v-if="editId === item.id" class="card p-2 mt-2" @submit.prevent="saveEdit(item)" novalidate data-testid="edit-stop-form">
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label :for="'edit-name-' + i" class="form-label small">Place or activity</label>
+                <input :id="'edit-name-' + i" v-model="editForm.name" class="form-control form-control-sm" maxlength="120" data-testid="edit-name">
+              </div>
+              <div class="col-md-6">
+                <label :for="'edit-address-' + i" class="form-label small">Address <span class="text-muted">(optional, turns on crowd info)</span></label>
+                <input :id="'edit-address-' + i" v-model="editForm.address" class="form-control form-control-sm" maxlength="200">
+              </div>
+              <div class="col-6 col-md-3">
+                <label :for="'edit-date-' + i" class="form-label small">Day</label>
+                <input :id="'edit-date-' + i" type="date" v-model="editForm.date" :min="startDate || null" :max="endDate || null" class="form-control form-control-sm">
+              </div>
+              <div class="col-6 col-md-3">
+                <label :for="'edit-hour-' + i" class="form-label small">Start time</label>
+                <select :id="'edit-hour-' + i" v-model.number="editForm.hour" class="form-select form-select-sm" data-testid="edit-hour">
+                  <option v-for="h in hourOptions" :key="h" :value="h">{{ formatHour(h) }}</option>
+                </select>
+              </div>
+              <div class="col-6 col-md-3">
+                <label :for="'edit-dur-' + i" class="form-label small">Duration</label>
+                <select :id="'edit-dur-' + i" v-model="editForm.duration" class="form-select form-select-sm">
+                  <option :value="null">Auto</option>
+                  <option v-for="d in editDurations" :key="d" :value="d">{{ d }} h</option>
+                </select>
+              </div>
+              <div class="col-6 col-md-3 d-flex align-items-end">
+                <div class="form-check">
+                  <input :id="'edit-outdoor-' + i" type="checkbox" v-model="editForm.outdoor" class="form-check-input">
+                  <label :for="'edit-outdoor-' + i" class="form-check-label small">Outdoors</label>
+                </div>
+              </div>
+            </div>
+            <p v-if="editError" class="text-danger small mt-2 mb-0" role="alert">{{ editError }}</p>
+            <div class="d-flex gap-2 mt-2">
+              <button type="submit" class="btn btn-success btn-sm" data-testid="edit-save">Save changes</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" @click="cancelEdit">Cancel</button>
+            </div>
+          </form>
 
           <div v-if="item.error" class="small text-danger mt-1">{{ item.error }}</div>
 
@@ -200,9 +245,28 @@
       <h5 class="mb-1">Wishlist</h5>
       <p class="small text-muted">Indoor backup places. If rain is forecast during an outdoor stop, you can swap one in.</p>
       <ul class="list-unstyled small mb-2">
-        <li v-for="w in wishlist" :key="w.id" class="d-flex justify-content-between align-items-center py-1 border-bottom">
-          <span>⭐ {{ w.name }}</span>
-          <button type="button" class="btn btn-sm btn-outline-danger py-0" :aria-label="'Remove ' + w.name" @click="removeWish(w)">✕</button>
+        <li v-for="w in wishlist" :key="w.id" class="py-1 border-bottom">
+          <form v-if="editWishId === w.id" class="row g-2" @submit.prevent="saveEditWish(w)" novalidate>
+            <div class="col-md-5">
+              <label :for="'wedit-name-' + w.id" class="visually-hidden">Wishlist place</label>
+              <input :id="'wedit-name-' + w.id" v-model="wishEditForm.name" class="form-control form-control-sm" maxlength="120">
+            </div>
+            <div class="col-md-4">
+              <label :for="'wedit-address-' + w.id" class="visually-hidden">Wishlist address</label>
+              <input :id="'wedit-address-' + w.id" v-model="wishEditForm.address" class="form-control form-control-sm" maxlength="200" placeholder="Address (optional)">
+            </div>
+            <div class="col-md-3 d-flex gap-1">
+              <button type="submit" class="btn btn-success btn-sm flex-fill">Save</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" @click="editWishId = null">Cancel</button>
+            </div>
+          </form>
+          <div v-else class="d-flex justify-content-between align-items-center">
+            <span>⭐ {{ w.name }}</span>
+            <span class="d-flex gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary py-0" :aria-label="'Edit ' + w.name" @click="startEditWish(w)">✎</button>
+              <button type="button" class="btn btn-sm btn-outline-danger py-0" :aria-label="'Remove ' + w.name" @click="removeWish(w)">✕</button>
+            </span>
+          </div>
         </li>
         <li v-if="!wishlist.length" class="text-muted">Nothing here yet.</li>
       </ul>
@@ -250,6 +314,7 @@ export default {
       selectedDate: '', // 'YYYY-MM-DD'
       weather: [], // every forecast entry: { date, time, span, condition, rain }
       weatherError: false,
+      simulateRain: false,
       timeOptions: Object.keys(TIME_WINDOWS),
       timeLabels: TIME_LABELS,
       plan: null, // result of "Plan my day" until applied or cancelled
@@ -263,7 +328,12 @@ export default {
       wishForm: { name: '', address: '' },
       saveStatus: '',
       loaded: false,
-      lastSavedKey: ''
+      lastSavedKey: '',
+      editId: null,
+      editForm: { name: '', address: '', date: '', hour: 10, duration: null, outdoor: false },
+      editError: '',
+      editWishId: null,
+      wishEditForm: { name: '', address: '' },
     }
   },
 
@@ -350,6 +420,10 @@ export default {
       return this.selectedDate ? DAY_NAMES[new Date(this.selectedDate + 'T00:00:00').getDay()] : ''
     },
     dayWeather() {
+      // Demo only: a fixed 2-5 PM rain window so the swap can be shown on cue
+      if (this.simulateRain && this.isDemo) {
+        return [{ date: this.selectedDate, time: 14, span: 3, condition: 'Rain', rain: true, simulated: true }]
+      }
       return this.weather.filter((w) => w.date === this.selectedDate)
     },
 
@@ -377,10 +451,18 @@ export default {
       return this.rainConflicts.length > 0
     },
     rainHours() {
-      return this.dayWeather
-        .filter((w) => w.rain)
-        .map((w) => formatHour(w.time) + '–' + formatHour(w.time + (w.span || 1)))
-        .join(', ')
+      // Merge back-to-back rain blocks: 12-3, 3-6 -> 12-6
+      const blocks = this.dayWeather.filter((w) => w.rain)
+        .map((w) => [w.time, w.time + (w.span || 1)])
+        .sort((a, b) => a[0] - b[0])
+      const merged = []
+      for (const [start, end] of blocks) {
+        const last = merged[merged.length - 1]
+        if (last && start <= last[1]) last[1] = Math.max(last[1], end)
+        else merged.push([start, end])
+      }
+      if (merged.length === 1 && merged[0][0] <= 0 && merged[0][1] >= 24) return 'all day'
+      return 'at ' + merged.map(([s, e]) => formatHour(s) + '–' + formatHour(e)).join(', ')
     },
     simulatedWeather() {
       return this.dayWeather.some((w) => w.simulated)
@@ -443,7 +525,12 @@ export default {
         result.push(info)
       }
       return result
-    }
+    },
+    editDurations() {
+      const all = new Set(this.durationOptions)
+      if (this.editForm.duration) all.add(this.editForm.duration)
+      return [...all].sort((a, b) => a - b)
+    },
   },
 
   methods: {
@@ -726,7 +813,76 @@ export default {
       item.highlight = true
       await this.updateTransitTimes()
       this.reportItinerary()
-    }
+    },
+    // ---------- editing stops ----------
+    startEdit(item) {
+      this.plan = null
+      this.editError = ''
+      this.editId = item.id
+      this.editForm = {
+        name: item.name, address: item.address || '', date: item.date,
+        hour: item.hour, duration: item.duration, outdoor: item.outdoor
+      }
+    },
+
+    cancelEdit() {
+      this.editId = null
+      this.editError = ''
+    },
+
+    async saveEdit(item) {
+      const name = this.editForm.name.trim()
+      const date = this.editForm.date
+      if (!name) { this.editError = 'Please enter a place or activity.'; return }
+      if (!date) { this.editError = 'Please pick a day.'; return }
+      if ((this.startDate && date < this.startDate) || (this.endDate && date > this.endDate)) {
+        this.editError = 'That day is outside your trip dates.'
+        return
+      }
+
+      const address = this.editForm.address.trim() || null
+      const placeChanged = name !== item.name || address !== item.address
+      const oldDuration = item.duration
+
+      item.name = name
+      item.address = address
+      item.date = date
+      item.hour = Number(this.editForm.hour)
+      item.duration = this.editForm.duration
+      item.outdoor = this.editForm.outdoor
+      item.highlight = true
+      this.plan = null
+      this.editId = null
+      this.editError = ''
+      this.selectedDate = date // follow the stop if it moved to another day
+
+      // A different place needs its own crowd data and typical visit length
+      if (placeChanged) {
+        item.replacedFrom = null
+        item.forecast = null
+        item.bestTime = null
+        item.dataFrom = ''
+        item.error = ''
+        if (this.editForm.duration === oldDuration) item.duration = null
+        await this.loadForecast(item)
+      }
+      await this.updateTransitTimes()
+      this.reportItinerary()
+    },
+
+    // ---------- editing wishlist ----------
+    startEditWish(w) {
+      this.editWishId = w.id
+      this.wishEditForm = { name: w.name, address: w.address || '' }
+    },
+
+    saveEditWish(w) {
+      const name = this.wishEditForm.name.trim()
+      if (!name) return
+      w.name = name
+      w.address = this.wishEditForm.address.trim() || null
+      this.editWishId = null
+    },
   }
 }
 </script>
