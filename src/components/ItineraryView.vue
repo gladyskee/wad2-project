@@ -59,8 +59,16 @@
 
           <!-- Time, name, badge, lock -->
           <div class="d-flex flex-wrap align-items-center gap-2">
-            <strong>{{ formatHour(item.hour) }}</strong> {{ item.name }}
-            <span v-if="inRain(item)" title="Outdoors during the 2:00 PM rain">🌧️</span>
+            <strong>{{ formatHour(item.hour) }}</strong>
+            <!-- History-aware name display requested by reviewer -->
+            <span :class="{'text-decoration-line-through text-muted me-1': item.replacedFrom}">
+              {{ item.replacedFrom ? item.replacedFrom : item.name }}
+            </span>
+            <span v-if="item.replacedFrom" class="text-primary fw-semibold small">
+              → Swapped to: {{ item.name }} ✨
+            </span>
+
+            <span v-if="inRain(item)" title="Outdoors during rain forecast">🌧️</span>
 
             <span v-if="crowdInfo[i].closedToday" class="badge bg-danger" data-testid="closed-badge">Closed {{ tripDay }}s</span>
             <CrowdBadge v-else-if="item.address" :loading="item.loading" :busyness="crowdInfo[i].busyness"
@@ -134,14 +142,16 @@ import PreferencesPanel from './PreferencesPanel.vue'
 import { prefs, loadPreferences } from '../preferences.js'
 import { getForecast, suggestSlot, planDay, busynessAt, formatHour, TIME_WINDOWS, TIME_LABELS } from '../crowd.js'
 import { fetchTravelTime } from '../services/maps.js'
+import { fetchWeatherForecast } from '../services/weatherService.js'
 
 export default {
   components: { CrowdBadge, CrowdChart, PreferencesPanel },
   data() {
     return {
-      hasConflict: true,
+      hasConflict: false,
       isResolved: false,
       tripDay: 'Tuesday', // Day 2 = Tue 13 Oct 2026
+      weather: [], // Stores clean weather objects
       timeOptions: Object.keys(TIME_WINDOWS),
       timeLabels: TIME_LABELS,
       plan: null, // result of "Plan my day" until applied or cancelled
@@ -171,6 +181,7 @@ export default {
       
       for (const item of this.itinerary) {
         if (this.inRain(item)) {
+          item.replacedFrom = item.name
           item.name = `${replacement.name} ✨ [Wishlist Replacement]`
           item.address = replacement.address
           item.outdoor = replacement.outdoor
@@ -184,11 +195,18 @@ export default {
   },
 
   async mounted() {
-    // The user's saved preferences (keeps the defaults if this fails)
+    // The user's save d preferences (keeps the defaults if this fails)
     try {
       await loadPreferences()
     } catch (err) {
       console.warn('Could not load preferences, using defaults')
+    }
+
+    try {
+      this.weather = await fetchWeatherForecast('Seoul')
+      this.checkForWeatherConflicts()
+    } catch (err) {
+      console.warn('Could not load weather forecast, using fallback logic')
     }
 
     // Load each tracked stop's forecast from our server
@@ -298,10 +316,28 @@ export default {
       item.loading = false
     },
 
+    checkForWeatherConflicts() {
+      // Automatically flag if any outdoor activity encounters rain
+      const conflictFound = this.itinerary.some(item => this.inRain(item))
+      this.hasConflict = conflictFound && !this.isResolved
+    },
+
     // Is this an outdoor stop that's happening during the 2pm rain?
     inRain(item) {
-      const rainHour = 14
-      return this.hasConflict && item.outdoor && item.hour <= rainHour && rainHour < item.hour + (item.duration || 1)
+      if (!item.outdoor || item.locked) {
+        return false
+      }
+
+      for (const w of this.weather) {
+        if (
+          w.rain &&
+          w.time >= item.hour &&
+          w.time < item.hour + (item.duration || 1)
+        ) {
+          return true
+        }
+      }
+      return false
     },
 
     // A clear message for any failed request
@@ -315,21 +351,7 @@ export default {
       this.$emit('itinerary-change', this.itinerary)
     },
 
-    resolveConflict() {
-      this.hasConflict = false
-      this.isResolved = true
-      // Swap the outdoor stop for the indoor one
-      for (const item of this.itinerary) {
-        if (this.inRain(item)) {
-          item.name = 'National Museum (Indoor) ✨ [Replaced by Adaptive Engine]'
-          item.address = null
-          item.forecast = null
-          item.outdoor = false
-          item.highlight = true
-        }
-      }
-      this.reportItinerary()
-    },
+    
 
     // "Plan my day": work out new times for every stop and show a preview
     makePlan() {
