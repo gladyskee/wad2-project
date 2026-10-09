@@ -34,8 +34,11 @@
         <li class="nav-item me-2">
           <button class="btn btn-sm" :class="activeTab === 'photos' ? 'btn-primary' : 'btn-outline-secondary'" @click="activeTab = 'photos'">Photos</button>
         </li>
-        <li class="nav-item">
+        <li class="nav-item me-2">
           <button class="btn btn-sm" :class="activeTab === 'safety' ? 'btn-primary' : 'btn-outline-secondary'" @click="activeTab = 'safety'" data-testid="safety-tab">Safety</button>
+        </li>
+        <li class="nav-item me-2">
+          <button class="btn btn-sm" :class="activeTab === 'travelOptions' ? 'btn-primary' : 'btn-outline-secondary'" @click="activeTab = 'travelOptions'">Go Options</button>
         </li>
       </ul>
 
@@ -72,6 +75,11 @@
       <div v-show="activeTab === 'safety'">
         <SafetyLayer @risk-change="handleRiskChange" />
       </div>
+
+      <div v-show="activeTab === 'travelOptions'">
+        <TransportOptions />
+      </div>
+
     </template>
   </div>
 </template>
@@ -85,9 +93,11 @@ import PhotosView from '../components/PhotosView.vue'
 import ExpensesView from '../components/ExpensesView.vue'
 import SafetyLayer from '../components/SafetyLayer.vue'
 import FlightDelayWidget from '../components/FlightDelayWidget.vue'
+import TransportOptions from '../components/TransportOptions.vue'
+
 
 export default {
-  components: { ItineraryView, GroupVoting, PackingView, PhotosView, ExpensesView, SafetyLayer, FlightDelayWidget },
+  components: { ItineraryView, GroupVoting, PackingView, PhotosView, ExpensesView, SafetyLayer, FlightDelayWidget, TransportOptions},
   props: { id: { type: String, default: 'seoul' } }, // from the route /trip/:id
   data() {
     return {

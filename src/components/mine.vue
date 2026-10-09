@@ -237,28 +237,6 @@
         <div v-if="i < itinerary.length - 1 && item.transitToNext" class="text-center small text-muted my-1" data-testid="transit-badge">
           🚇 ~{{ item.transitToNext }} transit to next stop
         </div>
-
-        <!-- display saved transport option -->  
-        <div v-for="route in savedFor(item)" :key="route.start" class="small mt-2 p-2 border rounded bg-white">
-          <div class="text-muted">
-            📍Starting from <strong>{{ route.start }}</strong>
-          </div>
-          <div v-for="opt in route.options" :key="opt.type"
-          class="d-flex justify-content-between align-items-center gap-2 py-1 border-top">
-            <div>
-              <div class="fw-semibold">{{ opt.route }}</div>
-            </div>
-            <div class="d-flex gap-2 flex-shrink-0">
-              <span class="badge bg-primary-subtle text-primary-emphasis fs-6">
-                ⏱️ ~ {{ formatDuration(opt.duration) }}
-              </span>
-              <span class="badge bg-success-subtle text-success-emphasis fs-6">
-                {{ opt.cost === 0 ? 'Free' : '~ ₩' + opt.cost.toLocaleString() }}
-              </span>
-            </div>
-          </div>
-        </div>
-
       </div>
     </div>
 
@@ -317,7 +295,6 @@ import { getForecast, suggestSlot, planDay, busynessAt, formatHour, TIME_WINDOWS
 import { fetchTravelTime } from '../services/maps.js'
 import { fetchWeatherForecast } from '../services/weatherService.js'
 import { trip, loadDemo, loadFromServer, savedShape, runtimeStop, newId } from '../itineraryStore.js'
-import { savedOption } from '../savedRoutes.js'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -906,19 +883,6 @@ export default {
       w.address = this.wishEditForm.address.trim() || null
       this.editWishId = null
     },
-
-    // transport option
-    savedFor(item) {
-      return savedOption.value.filter(r => 
-        r.end === item.name
-      )
-    },
-    formatDuration(min) {
-      const hour = Math.floor(min / 60);
-      const mins = min % 60;
-      return hour > 0 ? `${hour}h ${mins} mins` : `${mins} mins`; 
-  }
-
   }
 }
 </script>
