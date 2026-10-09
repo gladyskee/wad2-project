@@ -267,17 +267,13 @@ export async function getDisasterAlerts(countryCode, days = 7) {
 */
 export async function getNearestEmergencyServices(lat, lon, radiusM = 3000) {
   const query = `
-    [out:json][timeout:15];
+    [out:json][timeout:25];
     (
       nwr["amenity"~"hospital|clinic|police|fire_station"](around:${radiusM},${lat},${lon});
     );
     out center;
   `
-  const data = await getJSON(OVERPASS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'data=' + encodeURIComponent(query)
-  })
+  const data = await postOverpass(query)
 
   const places = data.elements
     .map((el) => {
@@ -346,4 +342,26 @@ export function computeRiskScore({ advisory, quakes = [], disasters = [] }) {
   if (score >= 75) { label = 'Critical'; colour = 'dark' }
 
   return { score, label, colour }
+}
+
+const OVERPASS_URLS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter'
+]
+
+// Try each Overpass server in turn
+async function postOverpass(query) {
+  let lastErr
+  for (const url of OVERPASS_URLS) {
+    try {
+      return await getJSON(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(query)
+      })
+    } catch (err) {
+      lastErr = err
+    }
+  }
+  throw lastErr
 }

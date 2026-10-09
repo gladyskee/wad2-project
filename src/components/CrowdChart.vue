@@ -36,7 +36,9 @@
     <table class="visually-hidden">
       <caption>Typical crowds by hour on {{ dayName }}</caption>
       <tr><th>Hour</th><th>Busyness</th></tr>
-      <tr v-for="bar in bars" :key="'t' + bar.hour"><td>{{ bar.label }}</td><td>{{ bar.value }}%</td></tr>
+      <tbody>
+        <tr v-for="bar in bars" :key="'t' + bar.hour"><td>{{ bar.label }}</td><td>{{ bar.value }}%</td></tr>
+      </tbody>
     </table>
   </figure>
 </template>

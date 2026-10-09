@@ -8,6 +8,9 @@ import crowdRoutes from './routes/crowd.js'
 import preferenceRoutes from './routes/preferences.js'
 import User from './models/User.js'
 
+import tripRoutes from './routes/trips.js'
+app.use('/api/trips', tripRoutes)
+
 const app = express()
 app.use(cors())
 app.use(express.json())

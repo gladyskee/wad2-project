@@ -1,32 +1,32 @@
-const API_KEY = 'YOUR_OPENWEATHER_API_KEY' // Replace with your key or use a backend proxy
+// Weather for a destination. The API key lives on the server (/api/weather),
+// never in the browser. axios is used so the login token is sent too.
+import axios from 'axios'
 
-export async function fetchWeatherForecast(city = 'Seoul') {
+const RAIN = ['Rain', 'Drizzle', 'Thunderstorm']
+
+// Give either { q: 'Kyoto, Japan' } or { lat, lon }.
+// Returns [{ date, time, span, condition, rain, simulated? }] for every forecast day (about 5 days ahead),
+// in the destination's local time. Each OpenWeatherMap entry covers a 3-hour block (span: 3).
+// If the request fails: throws, unless simulateOnFail is true (demo trip only), which returns fake rain.
+export async function fetchWeatherForecast({ q, lat, lon, fallbackDate, simulateOnFail = false }) {
   try {
-    const response = await fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${city}&units=metric&appid=${API_KEY}`)
-    if (!response.ok) throw new Error('Failed to fetch OpenWeatherMap data')
-    
-    const data = await response.json()
-    
-    // Map OpenWeatherMap list items into a simplified format for today's hours
-    return data.list.slice(0, 8).map(item => {
-      const hour = new Date(item.dt * 1000).getHours()
-      const condition = item.weather[0].main // e.g., "Rain", "Clear", "Clouds"
+    const params = q ? { q } : { lat, lon }
+    const { data } = await axios.get('/api/weather', { params })
+    const offsetSec = data.city.timezone // Seoul = +32400
+    return data.list.map((item) => {
+      const local = new Date((item.dt + offsetSec) * 1000) // read with getUTC* = destination time
+      const condition = item.weather[0].main
       return {
-        time: hour,
-        condition: condition,
-        rain: condition.toLowerCase().includes('rain')
+        date: local.toISOString().slice(0, 10),
+        time: local.getUTCHours(),
+        span: 3,
+        condition,
+        rain: RAIN.includes(condition) || item.pop >= 0.6
       }
     })
   } catch (err) {
-    console.warn('Using fallback weather mock due to network/API key error:', err)
-    
-    // Clean fallback matching your reviewer's suggested schema
-    return [
-      { time: 12, condition: 'Clear', rain: false },
-      { time: 13, condition: 'Clouds', rain: false },
-      { time: 14, condition: 'Rain', rain: true },
-      { time: 15, condition: 'Rain', rain: true },
-      { time: 16, condition: 'Clouds', rain: false }
-    ]
+    if (!simulateOnFail) throw err
+    console.warn('Using SIMULATED weather (server route or API key unavailable):', err.message)
+    return [{ date: fallbackDate, time: 14, span: 3, condition: 'Rain', rain: true, simulated: true }]
   }
 }

@@ -1,27 +1,91 @@
 <template>
   <div>
-    <h4>Day 2 Itinerary & Adaptive Conflict Engine</h4>
+    <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2">
+      <h4 class="mb-0">Itinerary & Adaptive Conflict Engine</h4>
+      <span v-if="saveStatus" class="small" :class="saveStatus.startsWith('Could not') ? 'text-danger' : 'text-muted'" role="status" data-testid="save-status">{{ saveStatus }}</span>
+    </div>
 
     <PreferencesPanel />
 
-    <!-- Weather alert (unchanged) -->
-    <div v-if="hasConflict" class="alert alert-warning">
-      <strong>Weather Alert:</strong> Heavy rain predicted at 14:00. Outdoor activities affected.
-      <div class="mt-2 d-flex align-items-center gap-2">
-        <select v-model="selectedWishlistItem" class="form-select form-select-sm w-auto">
-          <option v-for="w in wishlist" :key="w.name" :value="w">:star: {{ w.name }}</option>
-        </select>
-        <button class="btn btn-sm btn-danger" @click="resolveConflict">Replace with Wishlist Pick</button>
+    <!-- Day picker -->
+    <div v-if="dayList.length" class="d-flex flex-wrap gap-2 mb-3" aria-label="Trip days">
+      <button v-for="(d, n) in dayList" :key="d" type="button" class="btn btn-sm"
+        :class="d === selectedDate ? 'btn-primary' : 'btn-outline-secondary'"
+        :aria-pressed="d === selectedDate" @click="selectDay(d)" data-testid="day-btn">
+        Day {{ n + 1 }} · {{ dayLabel(d) }}
+      </button>
+    </div>
+
+    <!-- Weather alert: recalculated whenever a stop moves or the weather changes -->
+    <div v-if="hasConflict" class="alert alert-warning" data-testid="weather-alert">
+      <strong>Weather alert:</strong> Rain forecast at {{ rainHours }}<span v-if="simulatedWeather"> (simulated forecast)</span>.
+      Affected: {{ rainConflicts.map(i => shortName(i.name)).join(', ') }}.
+      <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+        <template v-if="wishlist.length">
+          <select v-model="chosenWishId" class="form-select form-select-sm w-auto" aria-label="Wishlist replacement" data-testid="wishlist-select">
+            <option v-for="w in wishlist" :key="w.id" :value="w.id">⭐ {{ w.name }}</option>
+          </select>
+          <button class="btn btn-sm btn-danger" :disabled="anyLoading" @click="resolveConflict" data-testid="resolve-btn">Replace {{ shortName(rainConflicts[0].name) }}</button>
+        </template>
+        <span v-else class="small">Your wishlist is empty. Add an indoor place in the wishlist below to swap in.</span>
       </div>
+    </div>
+    <p v-else-if="selectedDate && !dayWeather.length" class="small text-muted" data-testid="no-weather">
+      {{ weatherError ? 'Weather is unavailable right now.' : 'No forecast for this day yet (forecasts cover about 5 days ahead).' }}
+    </p>
+
+    <div v-if="retimeNotes.length" class="alert alert-info small" data-testid="retime-notes">
+      <strong>Re-timed after the swap:</strong>
+      <div v-for="n in retimeNotes" :key="n">{{ n }}</div>
     </div>
 
     <!-- Plan my day -->
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-      <button class="btn btn-primary btn-sm" :disabled="anyLoading" @click="makePlan" data-testid="plan-day-btn">
+      <button class="btn btn-primary btn-sm" :disabled="anyLoading || !itinerary.length" @click="makePlan" data-testid="plan-day-btn">
         ✨ Plan my day
       </button>
+      <button class="btn btn-outline-primary btn-sm" @click="toggleAdd" data-testid="add-stop-toggle">{{ showAdd ? 'Close' : '+ Add stop' }}</button>
       <span class="small text-muted">Re-times your stops to avoid crowds (🔒 preserved stops stay put)</span>
     </div>
+
+    <!-- Add a stop -->
+    <form v-if="showAdd" class="card p-3 mb-3" @submit.prevent="addStop" novalidate data-testid="add-stop-form">
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label for="stop-name" class="form-label small">Place or activity</label>
+          <input id="stop-name" v-model="addForm.name" class="form-control form-control-sm" maxlength="120" placeholder="e.g. Fushimi Inari Shrine" data-testid="stop-name">
+        </div>
+        <div class="col-md-6">
+          <label for="stop-address" class="form-label small">Address <span class="text-muted">(optional, turns on crowd info)</span></label>
+          <input id="stop-address" v-model="addForm.address" class="form-control form-control-sm" maxlength="200" placeholder="e.g. 68 Fukakusa Yabunouchicho, Kyoto" data-testid="stop-address">
+        </div>
+        <div class="col-6 col-md-3">
+          <label for="stop-date" class="form-label small">Day</label>
+          <input id="stop-date" type="date" v-model="addForm.date" :min="startDate || null" :max="endDate || null" class="form-control form-control-sm" data-testid="stop-date">
+        </div>
+        <div class="col-6 col-md-3">
+          <label for="stop-hour" class="form-label small">Start time</label>
+          <select id="stop-hour" v-model.number="addForm.hour" class="form-select form-select-sm" data-testid="stop-hour">
+            <option v-for="h in hourOptions" :key="h" :value="h">{{ formatHour(h) }}</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3">
+          <label for="stop-duration" class="form-label small">Duration</label>
+          <select id="stop-duration" v-model="addForm.duration" class="form-select form-select-sm">
+            <option :value="null">Auto</option>
+            <option v-for="d in durationOptions" :key="d" :value="d">{{ d }} h</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3 d-flex align-items-end">
+          <div class="form-check">
+            <input id="stop-outdoor" type="checkbox" v-model="addForm.outdoor" class="form-check-input" data-testid="stop-outdoor">
+            <label for="stop-outdoor" class="form-check-label small">Outdoors</label>
+          </div>
+        </div>
+      </div>
+      <p v-if="addError" class="text-danger small mt-2 mb-0" role="alert" data-testid="add-stop-error">{{ addError }}</p>
+      <div><button type="submit" class="btn btn-success btn-sm mt-2" data-testid="add-stop-save">Add to itinerary</button></div>
+    </form>
 
     <div v-if="plan" class="card p-3 mb-3 border-primary" data-testid="plan-preview">
       <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
@@ -52,21 +116,18 @@
     </div>
 
     <div class="card p-3 mb-3">
-      <div v-for="(item, i) in itinerary" :key="item.name">
-        <!-- Itinerary Item Box -->
-        <div class="mb-2 p-2 rounded"
-          :class="item.highlight ? 'bg-success-subtle' : 'bg-light'" data-testid="itinerary-item">
+      <p v-if="!itinerary.length" class="text-muted mb-0" data-testid="empty-day">
+        {{ selectedDate ? 'No stops on this day yet. Use "+ Add stop" to plan it.' : 'Use "+ Add stop" and pick a day to start your itinerary.' }}
+      </p>
+
+      <div v-for="(item, i) in itinerary" :key="item.id">
+        <div class="mb-2 p-2 rounded" :class="item.highlight ? 'bg-success-subtle' : 'bg-light'" data-testid="itinerary-item">
 
           <!-- Time, name, badge, lock -->
           <div class="d-flex flex-wrap align-items-center gap-2">
             <strong>{{ formatHour(item.hour) }}</strong>
-            <!-- History-aware name display requested by reviewer -->
-            <span :class="{'text-decoration-line-through text-muted me-1': item.replacedFrom}">
-              {{ item.replacedFrom ? item.replacedFrom : item.name }}
-            </span>
-            <span v-if="item.replacedFrom" class="text-primary fw-semibold small">
-              → Swapped to: {{ item.name }} ✨
-            </span>
+            <span v-if="item.replacedFrom" class="text-decoration-line-through text-muted me-1">{{ item.replacedFrom }}</span>
+            <span :class="{ 'fw-semibold text-primary': item.replacedFrom }">{{ item.replacedFrom ? '→ ' : '' }}{{ item.name }}<template v-if="item.replacedFrom"> ⭐</template></span>
 
             <span v-if="inRain(item)" title="Outdoors during rain forecast">🌧️</span>
 
@@ -74,9 +135,10 @@
             <CrowdBadge v-else-if="item.address" :loading="item.loading" :busyness="crowdInfo[i].busyness"
               :estimated="!!(item.forecast && item.forecast.estimated)" />
 
-            <label class="small text-muted ms-auto" title="Preserved stops are never moved by suggestions or Plan my day">
+            <label class="small text-muted ms-auto" title="Preserved stops are never moved by suggestions, Plan my day or weather swaps">
               <input type="checkbox" v-model="item.locked" @change="plan = null" class="form-check-input me-1" data-testid="lock-checkbox">🔒 Preserve
             </label>
+            <button type="button" class="btn btn-sm btn-outline-danger py-0" :aria-label="'Remove ' + item.name" @click="removeStop(item)" data-testid="remove-stop">✕</button>
           </div>
 
           <div v-if="item.error" class="small text-danger mt-1">{{ item.error }}</div>
@@ -126,16 +188,41 @@
             :planned-hour="item.hour" :suggest-hour="crowdInfo[i].suggestHour" />
         </div>
 
-        <!-- Transit time badge shown between stops -->
-        <div v-if="i < itinerary.length - 1 && item.transitToNext" class="text-center small text-muted my-1">
-          🚗 ~{{ item.transitToNext }} transit to next stop
+        <!-- Transit time between stops -->
+        <div v-if="i < itinerary.length - 1 && item.transitToNext" class="text-center small text-muted my-1" data-testid="transit-badge">
+          🚇 ~{{ item.transitToNext }} transit to next stop
         </div>
       </div>
+    </div>
+
+    <!-- Wishlist -->
+    <div class="card p-3 mb-3" data-testid="wishlist-card">
+      <h5 class="mb-1">Wishlist</h5>
+      <p class="small text-muted">Indoor backup places. If rain is forecast during an outdoor stop, you can swap one in.</p>
+      <ul class="list-unstyled small mb-2">
+        <li v-for="w in wishlist" :key="w.id" class="d-flex justify-content-between align-items-center py-1 border-bottom">
+          <span>⭐ {{ w.name }}</span>
+          <button type="button" class="btn btn-sm btn-outline-danger py-0" :aria-label="'Remove ' + w.name" @click="removeWish(w)">✕</button>
+        </li>
+        <li v-if="!wishlist.length" class="text-muted">Nothing here yet.</li>
+      </ul>
+      <form class="row g-2" @submit.prevent="addWish" novalidate>
+        <div class="col-md-5">
+          <label for="wish-name" class="visually-hidden">Wishlist place</label>
+          <input id="wish-name" v-model="wishForm.name" class="form-control form-control-sm" maxlength="120" placeholder="Indoor place, e.g. teamLab Borderless" data-testid="wish-name">
+        </div>
+        <div class="col-md-5">
+          <label for="wish-address" class="visually-hidden">Wishlist address</label>
+          <input id="wish-address" v-model="wishForm.address" class="form-control form-control-sm" maxlength="200" placeholder="Address (optional)">
+        </div>
+        <div class="col-md-2"><button type="submit" class="btn btn-outline-primary btn-sm w-100" data-testid="wish-add">Add</button></div>
+      </form>
     </div>
   </div>
 </template>
 
 <script>
+import axios from 'axios'
 import CrowdBadge from './CrowdBadge.vue'
 import CrowdChart from './CrowdChart.vue'
 import PreferencesPanel from './PreferencesPanel.vue'
@@ -143,100 +230,172 @@ import { prefs, loadPreferences } from '../preferences.js'
 import { getForecast, suggestSlot, planDay, busynessAt, formatHour, TIME_WINDOWS, TIME_LABELS } from '../crowd.js'
 import { fetchTravelTime } from '../services/maps.js'
 import { fetchWeatherForecast } from '../services/weatherService.js'
+import { trip, loadDemo, loadFromServer, savedShape, runtimeStop, newId } from '../itineraryStore.js'
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export default {
   components: { CrowdBadge, CrowdChart, PreferencesPanel },
+  emits: ['itinerary-change'],
+  props: {
+    tripId: { type: String, default: 'seoul' }, // 'seoul' = the demo trip (not saved)
+    destination: { type: String, default: '' },
+    startDate: { type: String, default: '' },
+    endDate: { type: String, default: '' },
+    initialStops: { type: Array, default: () => [] },
+    initialWishlist: { type: Array, default: () => [] }
+  },
   data() {
     return {
-      hasConflict: false,
-      isResolved: false,
-      tripDay: 'Tuesday', // Day 2 = Tue 13 Oct 2026
-      weather: [], // Stores clean weather objects
+      selectedDate: '', // 'YYYY-MM-DD'
+      weather: [], // every forecast entry: { date, time, span, condition, rain }
+      weatherError: false,
       timeOptions: Object.keys(TIME_WINDOWS),
       timeLabels: TIME_LABELS,
       plan: null, // result of "Plan my day" until applied or cancelled
       durationOptions: [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6],
-      // address: null = we don't track crowds for this stop
-      itinerary: [
-        { hour: 10, duration: 1, name: 'Korean Street Food Breakfast', address: null, outdoor: false, forecast: null, bestTime: null, loading: false, error: '', highlight: false, dataFrom: '', locked: false },
-        { hour: 12, duration: null, name: 'Gyeongbokgung Palace', address: '161 Sajik-ro, Jongno-gu, Seoul, South Korea', outdoor: true, forecast: null, bestTime: null, loading: false, error: '', highlight: false, dataFrom: '', locked: false },
-        { hour: 14, duration: null, name: 'Namsan Park (Outdoor)', address: '231 Samil-daero, Jung-gu, Seoul, South Korea', outdoor: true, forecast: null, bestTime: null, loading: false, error: '', highlight: false, dataFrom: '', locked: false },
-        { hour: 18, duration: 1.5, name: 'Dinner Reservation (Myeongdong Kyoja)', address: null, outdoor: false, forecast: null, bestTime: null, loading: false, error: '', highlight: false, dataFrom: '', locked: true },
-        { hour: 20, duration: null, name: 'Itaewon Street', address: 'Itaewon-ro, Yongsan-gu, Seoul, South Korea', outdoor: true, forecast: null, bestTime: null, loading: false, error: '', highlight: false, dataFrom: '', locked: false }
-      ],
-      // Add to your data() return object in ItineraryView.vue:
-    wishlist: [
-      { name: 'Starfield Library (Indoor Mall)', address: '513 Yeongdong-daero, Gangnam-gu, Seoul', outdoor: false },
-      { name: 'National Museum of Korea', address: '137 Seobinggo-ro, Yongsan-gu, Seoul', outdoor: false },
-      { name: 'Lotte World Indoor Adventure', address: '240 Olympic-ro, Songpa-gu, Seoul', outdoor: false }
-    ],
-    selectedWishlistItem: null,
-
-    // Update your resolveConflict() method:
-    resolveConflict() {
-      this.hasConflict = false
-      this.isResolved = true
-      
-      const replacement = this.selectedWishlistItem || this.wishlist[1] // Default to National Museum if none selected
-      
-      for (const item of this.itinerary) {
-        if (this.inRain(item)) {
-          item.replacedFrom = item.name
-          item.name = `${replacement.name} ✨ [Wishlist Replacement]`
-          item.address = replacement.address
-          item.outdoor = replacement.outdoor
-          item.forecast = null
-          item.highlight = true
-        }
-      }
-      this.reportItinerary()
-    }
+      hourOptions: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
+      selectedWishlistId: null,
+      retimeNotes: [],
+      showAdd: false,
+      addForm: { name: '', address: '', date: '', hour: 10, duration: null, outdoor: false },
+      addError: '',
+      wishForm: { name: '', address: '' },
+      saveStatus: '',
+      loaded: false,
+      lastSavedKey: ''
     }
   },
 
   async mounted() {
-    // The user's save d preferences (keeps the defaults if this fails)
+    // Start from this trip's saved data (or the demo)
+    if (this.isDemo) loadDemo()
+    else loadFromServer({ stops: this.initialStops, wishlist: this.initialWishlist })
+
+    const firstStopDay = trip.stops.map((s) => s.date).sort()[0]
+    this.selectedDate = firstStopDay || this.dayList[0] || ''
+
+    // The user's saved preferences (keeps the defaults if this fails)
     try {
       await loadPreferences()
     } catch (err) {
       console.warn('Could not load preferences, using defaults')
     }
 
+    // Weather first, so the alert can show while crowd data loads
     try {
-      this.weather = await fetchWeatherForecast('Seoul')
-      this.checkForWeatherConflicts()
+      this.weather = await fetchWeatherForecast(this.weatherParams)
     } catch (err) {
-      console.warn('Could not load weather forecast, using fallback logic')
+      this.weatherError = true
     }
 
-    // Load each tracked stop's forecast from our server
-    for (const item of this.itinerary) {
-      if (!item.address) continue
-      item.loading = true
-      try {
-        item.forecast = await getForecast(item.name, item.address)
-        item.bestTime = item.forecast.bestTimeDefault
-        if (item.duration === null) item.duration = item.forecast.durationDefault
-      } catch (err) {
-        item.error = this.errorText(err)
-      }
-      item.loading = false
+    // Load each tracked stop's forecast from our server (in parallel)
+    await Promise.all(trip.stops.map((item) => this.loadForecast(item)))
+
+    await this.updateTransitTimes()
+    this.reportItinerary()
+
+    // From here on, changes are saved
+    this.lastSavedKey = this.persistKey
+    this.loaded = true
+  },
+
+  beforeUnmount() {
+    // Don't lose a change made just before leaving the page
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer)
+      this.saveNow()
+    }
+  },
+
+  watch: {
+    // Fires whenever anything worth saving changes
+    persistKey(key) {
+      if (!this.loaded || this.isDemo || key === this.lastSavedKey) return
+      this.saveStatus = 'Saving…'
+      clearTimeout(this.saveTimer)
+      this.saveTimer = setTimeout(this.saveNow, 800)
     }
   },
 
   computed: {
-    anyLoading() {
-      for (const item of this.itinerary) {
-        if (item.loading) return true
+    isDemo() {
+      return this.tripId === 'seoul'
+    },
+    weatherParams() {
+      return this.isDemo
+        ? { lat: 37.5665, lon: 126.978, fallbackDate: '2026-10-13', simulateOnFail: true }
+        : { q: this.destination }
+    },
+    persistKey() {
+      return JSON.stringify(savedShape())
+    },
+
+    // The days of the trip: the date range if set, otherwise the days that have stops
+    dayList() {
+      if (this.startDate) {
+        const end = this.endDate || this.startDate
+        const days = []
+        const d = new Date(this.startDate + 'T00:00:00')
+        const last = new Date(end + 'T00:00:00')
+        while (d <= last && days.length < 31) {
+          days.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'))
+          d.setDate(d.getDate() + 1)
+        }
+        return days
       }
-      return false
+      return [...new Set(trip.stops.map((s) => s.date))].sort()
+    },
+    tripDay() {
+      return this.selectedDate ? DAY_NAMES[new Date(this.selectedDate + 'T00:00:00').getDay()] : ''
+    },
+    dayWeather() {
+      return this.weather.filter((w) => w.date === this.selectedDate)
+    },
+
+    // The selected day's stops in time order. A new array each time, so the store itself is never reordered.
+    itinerary() {
+      return trip.stops.filter((s) => s.date === this.selectedDate).sort((a, b) => a.hour - b.hour)
+    },
+    wishlist() {
+      return trip.wishlist
+    },
+    selectedWishlistItem() {
+      return this.wishlist.find((w) => w.id === this.selectedWishlistId) || this.wishlist[0] || null
+    },
+    // For the dropdown: shows the first wishlist item until the user picks another
+    chosenWishId: {
+      get() { return this.selectedWishlistItem ? this.selectedWishlistItem.id : null },
+      set(id) { this.selectedWishlistId = id }
+    },
+
+    // Outdoor, unlocked stops that overlap forecast rain. Updates by itself when anything moves.
+    rainConflicts() {
+      return this.itinerary.filter((item) => this.inRain(item))
+    },
+    hasConflict() {
+      return this.rainConflicts.length > 0
+    },
+    rainHours() {
+      return this.dayWeather
+        .filter((w) => w.rain)
+        .map((w) => formatHour(w.time) + '–' + formatHour(w.time + (w.span || 1)))
+        .join(', ')
+    },
+    simulatedWeather() {
+      return this.dayWeather.some((w) => w.simulated)
+    },
+
+    anyLoading() {
+      return trip.stops.some((item) => item.loading)
     },
 
     // One entry per stop: crowd % now + a better time (if any)
     crowdInfo() {
+      const list = this.itinerary
       const result = []
-      for (let i = 0; i < this.itinerary.length; i++) {
-        const item = this.itinerary[i]
+      for (let i = 0; i < list.length; i++) {
+        const item = list[i]
         const info = { busyness: null, suggestHour: null, reason: '', short: '', swap: null, closedToday: false }
 
         // Closed all day? (e.g. Gyeongbokgung Palace is closed on Tuesdays)
@@ -247,15 +406,15 @@ export default {
 
           // The other stops' times, so we don't suggest a clash
           const takenSlots = []
-          for (let j = 0; j < this.itinerary.length; j++) {
-            const other = this.itinerary[j]
+          for (let j = 0; j < list.length; j++) {
+            const other = list[j]
             if (j !== i) {
               takenSlots.push({
                 start: other.hour,
                 duration: other.duration || 1,
                 name: other.name,
                 index: j,
-                forecast: other.forecast, // so a swap also checks the OTHER stop's crowds
+                forecast: other.forecast,
                 bestTime: other.bestTime,
                 locked: other.locked
               })
@@ -269,14 +428,13 @@ export default {
             duration: item.duration,
             bestTime: item.bestTime,
             takenSlots,
-            prefs // from the preferences panel
+            prefs
           })
           // Locked stops keep their time: show crowds, but no suggestions
           if (!item.locked) {
             info.suggestHour = s.hour
-            info.reason = s.reason // full explanation (shown on hover)
+            info.reason = s.reason
             info.swap = s.swap
-            // One short line: "20% at 9:00 PM" or "Closed at 9:00 AM"
             if (s.currentProblem) info.short = s.currentProblem
             else if (s.hour !== null) info.short = 'Quieter at ' + formatHour(s.hour) + ' (' + s.busyness + '% vs ' + s.currentBusyness + '% now)'
             else if (s.swap) info.short = 'Swapping gives a quieter time (' + s.swap.busyness + '% vs ' + s.currentBusyness + '% now)'
@@ -294,6 +452,111 @@ export default {
     // "Dinner Reservation (Myeongdong Kyoja)" -> "Dinner Reservation"
     shortName(name) {
       return name.split(' (')[0]
+    },
+
+    dayLabel(d) {
+      return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    },
+
+    selectDay(d) {
+      this.selectedDate = d
+      this.plan = null
+      this.retimeNotes = []
+      this.addForm.date = d
+    },
+
+    // ---------- saving ----------
+    async saveNow() {
+      this.saveTimer = null
+      if (this.isDemo) return
+      const key = this.persistKey
+      try {
+        await axios.put('/api/trips/' + this.tripId + '/itinerary', JSON.parse(key))
+        this.lastSavedKey = key
+        this.saveStatus = 'All changes saved'
+      } catch (err) {
+        this.saveStatus = 'Could not save changes. Is the server running?'
+      }
+    },
+
+    // ---------- adding / removing stops ----------
+    toggleAdd() {
+      this.showAdd = !this.showAdd
+      this.addError = ''
+      this.addForm.date = this.selectedDate || this.startDate || ''
+    },
+
+    async addStop() {
+      this.addError = ''
+      const name = this.addForm.name.trim()
+      const date = this.addForm.date
+      if (!name) {
+        this.addError = 'Please enter a place or activity.'
+        return
+      }
+      if (!date) {
+        this.addError = 'Please pick a day.'
+        return
+      }
+      if ((this.startDate && date < this.startDate) || (this.endDate && date > this.endDate)) {
+        this.addError = 'That day is outside your trip dates.'
+        return
+      }
+
+      this.plan = null
+      trip.stops.push(runtimeStop({
+        id: newId('s'),
+        name,
+        date,
+        hour: Number(this.addForm.hour),
+        duration: this.addForm.duration,
+        address: this.addForm.address.trim() || null,
+        outdoor: this.addForm.outdoor
+      }))
+      const added = trip.stops[trip.stops.length - 1] // the reactive version of the new stop
+      this.selectedDate = date
+      this.addForm.name = ''
+      this.addForm.address = ''
+      this.addForm.outdoor = false
+
+      await this.loadForecast(added)
+      await this.updateTransitTimes()
+      this.reportItinerary()
+    },
+
+    async removeStop(stop) {
+      this.plan = null
+      trip.stops = trip.stops.filter((s) => s.id !== stop.id)
+      await this.updateTransitTimes()
+      this.reportItinerary()
+    },
+
+    addWish() {
+      const name = this.wishForm.name.trim()
+      if (!name) return
+      trip.wishlist.push({ id: newId('w'), name, address: this.wishForm.address.trim() || null, outdoor: false })
+      this.wishForm.name = ''
+      this.wishForm.address = ''
+    },
+
+    removeWish(w) {
+      trip.wishlist = trip.wishlist.filter((x) => x.id !== w.id)
+    },
+
+    // ---------- crowd data ----------
+    // Load one stop's crowd forecast (stops without an address aren't tracked)
+    async loadForecast(item) {
+      if (!item.address) return
+      item.loading = true
+      item.error = ''
+      try {
+        item.forecast = await getForecast(item.name, item.address)
+        item.bestTime = item.forecast.bestTimeDefault
+        if (item.duration === null) item.duration = item.forecast.durationDefault
+      } catch (err) {
+        item.error = this.errorText(err)
+      }
+      item.loading = false
     },
 
     // Swap an estimate for a nearby landmark's real forecast, e.g. Namsan Park -> N Seoul Tower
@@ -316,28 +579,86 @@ export default {
       item.loading = false
     },
 
-    checkForWeatherConflicts() {
-      // Automatically flag if any outdoor activity encounters rain
-      const conflictFound = this.itinerary.some(item => this.inRain(item))
-      this.hasConflict = conflictFound && !this.isResolved
+    // ---------- weather ----------
+    // Is this an outdoor, unlocked stop that overlaps forecast rain?
+    // Each forecast entry covers [time, time + span), the stop covers [hour, hour + duration).
+    inRain(item) {
+      if (!item.outdoor || item.locked) return false
+      const end = item.hour + (item.duration || 1)
+      return this.dayWeather.some((w) => w.rain && w.time < end && w.time + (w.span || 1) > item.hour)
     },
 
-    // Is this an outdoor stop that's happening during the 2pm rain?
-    inRain(item) {
-      if (!item.outdoor || item.locked) {
-        return false
-      }
+    // Replace the first rained-on stop with the chosen wishlist place,
+    // load its crowd data, recalculate transit and push later stops back if needed.
+    async resolveConflict() {
+      const target = this.rainConflicts[0]
+      const pick = this.selectedWishlistItem
+      if (!target || !pick) return
+      this.plan = null
 
-      for (const w of this.weather) {
-        if (
-          w.rain &&
-          w.time >= item.hour &&
-          w.time < item.hour + (item.duration || 1)
-        ) {
-          return true
+      target.replacedFrom = target.name
+      target.name = pick.name
+      target.address = pick.address
+      target.outdoor = pick.outdoor
+      target.highlight = true
+      target.forecast = null
+      target.dataFrom = ''
+      target.duration = null // use the new place's typical visit length
+
+      trip.wishlist = trip.wishlist.filter((w) => w.id !== pick.id) // each wishlist pick is used once
+      this.selectedWishlistId = null
+
+      await this.loadForecast(target)
+      if (target.duration === null) target.duration = 1.5 // no crowd data
+
+      await this.updateTransitTimes()
+      this.retimeStops()
+      await this.updateTransitTimes()
+      this.reportItinerary()
+    },
+
+    // Push later stops back when an earlier stop (plus travel) now runs into them
+    retimeStops() {
+      const list = this.itinerary // fixed snapshot: hours change while we loop
+      const notes = []
+      for (let i = 1; i < list.length; i++) {
+        const prev = list[i - 1]
+        const cur = list[i]
+        const prevEnd = prev.hour + (prev.duration || 1) + (prev.transitSecs || 0) / 3600
+        if (cur.hour >= prevEnd) continue
+        if (cur.locked) {
+          notes.push(this.shortName(cur.name) + ' is preserved at ' + formatHour(cur.hour) + ' but now clashes with ' + this.shortName(prev.name) + '. Adjust one of them.')
+        } else {
+          const newHour = Math.ceil(prevEnd)
+          notes.push(this.shortName(cur.name) + ': ' + formatHour(cur.hour) + ' → ' + formatHour(newHour))
+          cur.hour = newHour
+          cur.highlight = true
         }
       }
-      return false
+      this.retimeNotes = notes
+    },
+
+    // ---------- transit ----------
+    // Travel time from every stop to the next (all requests run at once)
+    async updateTransitTimes() {
+      const list = this.itinerary
+      const place = (s) => s.address || this.shortName(s.name) + (this.destination ? ', ' + this.destination : '')
+      await Promise.all(list.map(async (stop, i) => {
+        const next = list[i + 1]
+        if (!next) {
+          stop.transitToNext = null
+          stop.transitSecs = 0
+          return
+        }
+        try {
+          const t = await fetchTravelTime(place(stop), place(next))
+          stop.transitToNext = t.durationText
+          stop.transitSecs = t.durationValue
+        } catch (err) {
+          stop.transitToNext = '30 mins (est)'
+          stop.transitSecs = 1800
+        }
+      }))
     },
 
     // A clear message for any failed request
@@ -348,16 +669,16 @@ export default {
     },
 
     reportItinerary() {
-      this.$emit('itinerary-change', this.itinerary)
+      this.$emit('itinerary-change', trip.stops)
     },
 
-    
-
+    // ---------- crowd-based planning ----------
     // "Plan my day": work out new times for every stop and show a preview
     makePlan() {
+      this.planStops = this.itinerary // snapshot, so row.index still matches when applied
       const stops = []
-      for (let i = 0; i < this.itinerary.length; i++) {
-        const item = this.itinerary[i]
+      for (let i = 0; i < this.planStops.length; i++) {
+        const item = this.planStops[i]
         stops.push({
           index: i,
           name: item.name,
@@ -374,55 +695,38 @@ export default {
     async applyPlan() {
       for (const row of this.plan.rows) {
         if (row.newHour === null || row.newHour === row.oldHour) continue
-        this.itinerary[row.index].hour = row.newHour
-        this.itinerary[row.index].highlight = true
+        this.planStops[row.index].hour = row.newHour
+        this.planStops[row.index].highlight = true
       }
-      this.itinerary.sort((a, b) => a.hour - b.hour) // sort AFTER all changes (indexes point to the old order)
       this.plan = null
-      await this.updateTransitTimes() // Recalculate transit spacing
+      this.retimeNotes = []
+      await this.updateTransitTimes()
       this.reportItinerary()
     },
 
     // Swap the times of two stops, e.g. tower <-> dinner
     async swapItems(a, b) {
       this.plan = null
-      const first = this.itinerary[a]
-      const second = this.itinerary[b]
+      const list = this.itinerary
+      const first = list[a]
+      const second = list[b]
       const temp = first.hour
       first.hour = second.hour
       second.hour = temp
       first.highlight = true
       second.highlight = true
-      this.itinerary.sort((x, y) => x.hour - y.hour)
-      await this.updateTransitTimes() // Recalculate transit spacing
+      await this.updateTransitTimes()
       this.reportItinerary()
     },
 
     async moveItem(index, newHour) {
       this.plan = null
-      this.itinerary[index].hour = newHour
-      this.itinerary[index].highlight = true
-      // Keep the day in time order
-      this.itinerary.sort((a, b) => a.hour - b.hour)
-      await this.updateTransitTimes() // Recalculate transit spacing
+      const item = this.itinerary[index]
+      item.hour = newHour
+      item.highlight = true
+      await this.updateTransitTimes()
       this.reportItinerary()
-    },
-
-    async updateTransitTimes() {
-    for (let i = 0; i < this.itinerary.length - 1; i++) {
-      const currentStop = this.itinerary[i]
-      const nextStop = this.itinerary[i + 1]
-
-      if (currentStop.address && nextStop.address) {
-        try {
-          const transit = await fetchTravelTime(currentStop.address, nextStop.address)
-          currentStop.transitToNext = transit.durationText
-        } catch (err) {
-          currentStop.transitToNext = '30 mins (est)'
-        }
-      }
     }
-  }
   }
 }
 </script>
