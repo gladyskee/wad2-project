@@ -133,18 +133,20 @@
                     <th>Duration</th>
                     <th>Cost</th>
                     <th></th>
-                    <th></th>
                 </tr>
             </thead>
             <!-- available options -->
             <tbody>
+                <tr v-if="!getOptions.length">
+                    <td colspan="5" class="text-center text-muted py-3">Select a destination to see travel options.</td>
+                </tr>
                 <tr v-for="opt in getOptions" :key="opt.type">
                     <td>{{ opt.type }}</td>
                     <td>{{ opt.route }}</td>
                     <td>{{ formatDuration(opt.duration) }}</td>
                     <td>{{ opt.cost === 0 ? 'Free' : '₩' + opt.cost.toLocaleString() }}</td>
                     <td class="text-center">
-                        <button type="button"class='btn btn-sm' :class="isSaved(opt) ? 'btn-outline-danger' : 'btn-outline-primary'" 
+                        <button type="button"class="btn btn-sm" :class="isSaved(opt) ? 'btn-outline-danger' : 'btn-outline-primary'" 
                         @click="toggleSaved(opt)">
                             {{ isSaved(opt) ? 'Unsaved' : 'Save' }}
                         </button>

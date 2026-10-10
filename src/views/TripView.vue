@@ -7,7 +7,7 @@
     </div>
 
     <template v-else>
-      <div class="card p-4 mb-4 bg-dark text-white">
+      <div class="card p-4 mb-4 text-white trip-hero">
         <h2>{{ headerTitle }}</h2>
         <p class="mb-0 text-white-50">{{ headerSubtitle }}</p>
       </div>
