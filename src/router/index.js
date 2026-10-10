@@ -5,6 +5,12 @@ import LoginView from '../views/LoginView.vue'
 import SignupView from '../views/SignupView.vue'
 import { auth } from '../auth.js'
 
+import distanceRoutes from './routes/distance.js'
+import flightRoutes from './routes/flights.js'
+
+app.use('/api/distance-matrix', distanceRoutes)
+app.use('/api/flights', flightRoutes)
+
 const routes = [
   { path: '/', name: 'Home', component: HomeView, meta: { requiresAuth: true } },
   { path: '/trip/:id', name: 'Trip', component: TripView, props: true, meta: { requiresAuth: true } },
