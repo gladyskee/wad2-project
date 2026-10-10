@@ -67,6 +67,7 @@ export default {
     }
   },
   async mounted() {
+    resetDay1() // start from the original Day 1 every time the widget opens
     try {
       this.flight = await checkFlightStatus('KE621')
       this.delayMinutes = this.flight.delayMinutes || 0

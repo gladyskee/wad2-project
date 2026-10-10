@@ -2,7 +2,7 @@
   <div>
     <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2">
       <h4 class="mb-0">Itinerary & Adaptive Conflict Engine</h4>
-      <span v-if="saveStatus" class="small" :class="saveStatus.startsWith('Could not') ? 'text-danger' : 'text-muted'" role="status" data-testid="save-status">{{ saveStatus }}</span>
+      <span v-if="saveStatus" class="small" :class="saveStatus.startsWith('Could not') ? 'text-danger' : 'text-muted'" role="status">{{ saveStatus }}</span>
     </div>
 
     <PreferencesPanel />
@@ -11,64 +11,64 @@
     <div v-if="dayList.length" class="d-flex flex-wrap gap-2 mb-3" aria-label="Trip days">
       <button v-for="(d, n) in dayList" :key="d" type="button" class="btn btn-sm"
         :class="d === selectedDate ? 'btn-primary' : 'btn-outline-secondary'"
-        :aria-pressed="d === selectedDate" @click="selectDay(d)" data-testid="day-btn">
+        :aria-pressed="d === selectedDate" @click="selectDay(d)">
         Day {{ n + 1 }} · {{ dayLabel(d) }}
       </button>
     </div>
 
     <!-- Weather alert: recalculated whenever a stop moves or the weather changes -->
-    <div v-if="hasConflict" class="alert alert-warning" data-testid="weather-alert">
+    <div v-if="hasConflict" class="alert alert-warning">
       <strong>Weather alert:</strong> Rain forecast {{ rainHours }}<span v-if="simulatedWeather"> (simulated forecast)</span>.
       Affected: {{ rainConflicts.map(i => shortName(i.name)).join(', ') }}.
       <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
         <template v-if="wishlist.length">
-          <select v-model="chosenWishId" class="form-select form-select-sm w-auto" aria-label="Wishlist replacement" data-testid="wishlist-select">
+          <select v-model="chosenWishId" class="form-select form-select-sm w-auto" aria-label="Wishlist replacement">
             <option v-for="w in wishlist" :key="w.id" :value="w.id">⭐ {{ w.name }}</option>
           </select>
-          <button class="btn btn-sm btn-danger" :disabled="anyLoading" @click="resolveConflict" data-testid="resolve-btn">Replace {{ shortName(rainConflicts[0].name) }}</button>
+          <button class="btn btn-sm btn-danger" :disabled="anyLoading" @click="resolveConflict">Replace {{ shortName(rainConflicts[0].name) }}</button>
         </template>
         <span v-else class="small">Your wishlist is empty. Add an indoor place in the wishlist below to swap in.</span>
       </div>
     </div>
-    <p v-else-if="selectedDate && !dayWeather.length" class="small text-muted" data-testid="no-weather">
+    <p v-else-if="selectedDate && !dayWeather.length" class="small text-muted">
       {{ weatherError ? 'Weather is unavailable right now.' : 'No forecast for this day yet (forecasts cover about 5 days ahead).' }}
     </p>
 
-    <div v-if="retimeNotes.length" class="alert alert-info small" data-testid="retime-notes">
+    <div v-if="retimeNotes.length" class="alert alert-info small">
       <strong>Re-timed after the swap:</strong>
       <div v-for="n in retimeNotes" :key="n">{{ n }}</div>
     </div>
 
     <!-- Plan my day -->
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-      <button class="btn btn-primary btn-sm" :disabled="anyLoading || !itinerary.length" @click="makePlan" data-testid="plan-day-btn">
+      <button class="btn btn-primary btn-sm" :disabled="anyLoading || !itinerary.length" @click="makePlan">
         ✨ Plan my day
       </button>
-      <button class="btn btn-outline-primary btn-sm" @click="toggleAdd" data-testid="add-stop-toggle">{{ showAdd ? 'Close' : '+ Add stop' }}</button>
+      <button class="btn btn-outline-primary btn-sm" @click="toggleAdd">{{ showAdd ? 'Close' : '+ Add stop' }}</button>
       <span class="small text-muted">Re-times your stops to avoid crowds (🔒 preserved stops stay put)</span>
       <label v-if="isDemo" class="small text-muted ms-auto">
-        <input type="checkbox" v-model="simulateRain" @change="plan = null" class="form-check-input me-1" data-testid="simulate-rain">Simulate rain (demo)
+        <input type="checkbox" v-model="simulateRain" @change="plan = null" class="form-check-input me-1">Simulate rain (demo)
       </label>
     </div>
 
     <!-- Add a stop -->
-    <form v-if="showAdd" class="card p-3 mb-3" @submit.prevent="addStop" novalidate data-testid="add-stop-form">
+    <form v-if="showAdd" class="card p-3 mb-3" @submit.prevent="addStop">
       <div class="row g-2">
         <div class="col-md-6">
           <label for="stop-name" class="form-label small">Place or activity</label>
-          <input id="stop-name" v-model="addForm.name" class="form-control form-control-sm" maxlength="120" placeholder="e.g. Fushimi Inari Shrine" data-testid="stop-name">
+          <input id="stop-name" v-model="addForm.name" class="form-control form-control-sm" maxlength="120" placeholder="e.g. Fushimi Inari Shrine">
         </div>
         <div class="col-md-6">
           <label for="stop-address" class="form-label small">Address <span class="text-muted">(optional, turns on crowd info)</span></label>
-          <input id="stop-address" v-model="addForm.address" class="form-control form-control-sm" maxlength="200" placeholder="e.g. 68 Fukakusa Yabunouchicho, Kyoto" data-testid="stop-address">
+          <input id="stop-address" v-model="addForm.address" class="form-control form-control-sm" maxlength="200" placeholder="e.g. 68 Fukakusa Yabunouchicho, Kyoto">
         </div>
         <div class="col-6 col-md-3">
           <label for="stop-date" class="form-label small">Day</label>
-          <input id="stop-date" type="date" v-model="addForm.date" :min="startDate || null" :max="endDate || null" class="form-control form-control-sm" data-testid="stop-date">
+          <input id="stop-date" type="date" v-model="addForm.date" :min="startDate || null" :max="endDate || null" class="form-control form-control-sm">
         </div>
         <div class="col-6 col-md-3">
           <label for="stop-hour" class="form-label small">Start time</label>
-          <select id="stop-hour" v-model.number="addForm.hour" class="form-select form-select-sm" data-testid="stop-hour">
+          <select id="stop-hour" v-model.number="addForm.hour" class="form-select form-select-sm">
             <option v-for="h in hourOptions" :key="h" :value="h">{{ formatHour(h) }}</option>
           </select>
         </div>
@@ -81,16 +81,16 @@
         </div>
         <div class="col-6 col-md-3 d-flex align-items-end">
           <div class="form-check">
-            <input id="stop-outdoor" type="checkbox" v-model="addForm.outdoor" class="form-check-input" data-testid="stop-outdoor">
+            <input id="stop-outdoor" type="checkbox" v-model="addForm.outdoor" class="form-check-input">
             <label for="stop-outdoor" class="form-check-label small">Outdoors</label>
           </div>
         </div>
       </div>
-      <p v-if="addError" class="text-danger small mt-2 mb-0" role="alert" data-testid="add-stop-error">{{ addError }}</p>
-      <div><button type="submit" class="btn btn-success btn-sm mt-2" data-testid="add-stop-save">Add to itinerary</button></div>
+      <p v-if="addError" class="text-danger small mt-2 mb-0" role="alert">{{ addError }}</p>
+      <div><button type="submit" class="btn btn-success btn-sm mt-2">Add to itinerary</button></div>
     </form>
 
-    <div v-if="plan" class="card p-3 mb-3 border-primary" data-testid="plan-preview">
+    <div v-if="plan" class="card p-3 mb-3 border-primary">
       <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
         <strong>New plan</strong>
         <span v-if="plan.avgBefore !== null" class="small text-muted">
@@ -108,23 +108,23 @@
         </li>
       </ul>
 
-      <div v-for="u in plan.unplaced" :key="'u' + u.index" class="small text-danger mb-2" data-testid="plan-unplaced">
+      <div v-for="u in plan.unplaced" :key="'u' + u.index" class="small text-danger mb-2">
         {{ u.name }}: {{ u.reason }}
       </div>
 
       <div class="d-flex gap-2">
-        <button class="btn btn-primary btn-sm" @click="applyPlan" data-testid="plan-apply-btn">Apply</button>
-        <button class="btn btn-outline-secondary btn-sm" @click="plan = null" data-testid="plan-cancel-btn">Cancel</button>
+        <button class="btn btn-primary btn-sm" @click="applyPlan">Apply</button>
+        <button class="btn btn-outline-secondary btn-sm" @click="plan = null">Cancel</button>
       </div>
     </div>
 
     <div class="card p-3 mb-3">
-      <p v-if="!itinerary.length" class="text-muted mb-0" data-testid="empty-day">
+      <p v-if="!itinerary.length" class="text-muted mb-0">
         {{ selectedDate ? 'No stops on this day yet. Use "+ Add stop" to plan it.' : 'Use "+ Add stop" and pick a day to start your itinerary.' }}
       </p>
 
       <div v-for="(item, i) in itinerary" :key="item.id">
-        <div class="mb-2 p-2 rounded" :class="item.highlight ? 'bg-success-subtle' : 'bg-light'" data-testid="itinerary-item">
+        <div class="mb-2 p-2 rounded" :class="item.highlight ? 'bg-success-subtle' : 'bg-light'">
 
           <!-- Time, name, badge, lock -->
           <div class="d-flex flex-wrap align-items-center gap-2">
@@ -134,22 +134,22 @@
 
             <span v-if="inRain(item)" title="Outdoors during rain forecast">🌧️</span>
 
-            <span v-if="crowdInfo[i].closedToday" class="badge bg-danger" data-testid="closed-badge">Closed {{ tripDay }}s</span>
+            <span v-if="crowdInfo[i].closedToday" class="badge bg-danger">Closed {{ tripDay }}s</span>
             <CrowdBadge v-else-if="item.address" :loading="item.loading" :busyness="crowdInfo[i].busyness"
               :estimated="!!(item.forecast && item.forecast.estimated)" />
 
             <label class="small text-muted ms-auto" title="Preserved stops are never moved by suggestions, Plan my day or weather swaps">
-              <input type="checkbox" v-model="item.locked" @change="plan = null" class="form-check-input me-1" data-testid="lock-checkbox">🔒 Preserve
+              <input type="checkbox" v-model="item.locked" @change="plan = null" class="form-check-input me-1">🔒 Preserve
             </label>
-            <button type="button" class="btn btn-sm btn-outline-secondary py-0" :aria-label="'Edit ' + item.name" @click="startEdit(item)" data-testid="edit-stop">✎</button>
-            <button type="button" class="btn btn-sm btn-outline-danger py-0" :aria-label="'Remove ' + item.name" @click="removeStop(item)" data-testid="remove-stop">✕</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0" :aria-label="'Edit ' + item.name" @click="startEdit(item)">✎</button>
+            <button type="button" class="btn btn-sm btn-outline-danger py-0" :aria-label="'Remove ' + item.name" @click="removeStop(item)">✕</button>
           </div>
 
-          <form v-if="editId === item.id" class="card p-2 mt-2" @submit.prevent="saveEdit(item)" novalidate data-testid="edit-stop-form">
+          <form v-if="editId === item.id" class="card p-2 mt-2" @submit.prevent="saveEdit(item)">
             <div class="row g-2">
               <div class="col-md-6">
                 <label :for="'edit-name-' + i" class="form-label small">Place or activity</label>
-                <input :id="'edit-name-' + i" v-model="editForm.name" class="form-control form-control-sm" maxlength="120" data-testid="edit-name">
+                <input :id="'edit-name-' + i" v-model="editForm.name" class="form-control form-control-sm" maxlength="120">
               </div>
               <div class="col-md-6">
                 <label :for="'edit-address-' + i" class="form-label small">Address <span class="text-muted">(optional, turns on crowd info)</span></label>
@@ -161,7 +161,7 @@
               </div>
               <div class="col-6 col-md-3">
                 <label :for="'edit-hour-' + i" class="form-label small">Start time</label>
-                <select :id="'edit-hour-' + i" v-model.number="editForm.hour" class="form-select form-select-sm" data-testid="edit-hour">
+                <select :id="'edit-hour-' + i" v-model.number="editForm.hour" class="form-select form-select-sm">
                   <option v-for="h in hourOptions" :key="h" :value="h">{{ formatHour(h) }}</option>
                 </select>
               </div>
@@ -181,7 +181,7 @@
             </div>
             <p v-if="editError" class="text-danger small mt-2 mb-0" role="alert">{{ editError }}</p>
             <div class="d-flex gap-2 mt-2">
-              <button type="submit" class="btn btn-success btn-sm" data-testid="edit-save">Save changes</button>
+              <button type="submit" class="btn btn-success btn-sm">Save changes</button>
               <button type="button" class="btn btn-outline-secondary btn-sm" @click="cancelEdit">Cancel</button>
             </div>
           </form>
@@ -190,23 +190,23 @@
 
           <!-- No real data: offer nearby landmarks -->
           <div v-if="item.forecast && item.forecast.estimated && item.forecast.nearby.length"
-            class="small mt-1 d-flex flex-wrap align-items-center gap-1" data-testid="crowd-estimate-note">
+            class="small mt-1 d-flex flex-wrap align-items-center gap-1">
             <span class="text-muted">No data for this place (showing an estimate). Use data from nearby:</span>
             <button v-for="place in item.forecast.nearby" :key="place" class="btn btn-sm btn-link p-0 me-2"
-              :disabled="item.loading" @click="useNearby(item, place)" data-testid="crowd-nearby-btn">{{ place }}</button>
+              :disabled="item.loading" @click="useNearby(item, place)">{{ place }}</button>
           </div>
-          <div v-if="item.dataFrom" class="small text-muted mt-1" data-testid="crowd-source">Crowd data from {{ item.dataFrom }} (nearby)</div>
+          <div v-if="item.dataFrom" class="small text-muted mt-1">Crowd data from {{ item.dataFrom }} (nearby)</div>
 
           <!-- Preference + duration -->
           <div v-if="item.forecast && item.forecast.days && !crowdInfo[i].closedToday" class="small mt-1 d-flex flex-wrap align-items-center gap-2">
             <label :for="'best-' + i" class="text-muted">Preference</label>
-            <select :id="'best-' + i" v-model="item.bestTime" class="form-select form-select-sm w-auto" data-testid="best-time-select">
+            <select :id="'best-' + i" v-model="item.bestTime" class="form-select form-select-sm w-auto">
               <option v-for="opt in timeOptions" :key="opt" :value="opt">
                 {{ timeLabels[opt] }}{{ opt === item.forecast.bestTimeDefault ? ' (recommended)' : '' }}
               </option>
             </select>
             <label :for="'dur-' + i" class="text-muted ms-1">Duration</label>
-            <select :id="'dur-' + i" v-model.number="item.duration" class="form-select form-select-sm w-auto" data-testid="duration-select">
+            <select :id="'dur-' + i" v-model.number="item.duration" class="form-select form-select-sm w-auto">
               <option v-for="d in durationOptions" :key="d" :value="d">
                 {{ d }} h{{ d === item.forecast.durationDefault ? ' (typical)' : '' }}
               </option>
@@ -217,12 +217,12 @@
           <div v-if="crowdInfo[i].suggestHour !== null || crowdInfo[i].swap" class="small mt-2 d-flex flex-wrap align-items-center gap-2">
             <span class="text-muted" :title="crowdInfo[i].reason">💡 {{ crowdInfo[i].short }}</span>
             <button v-if="crowdInfo[i].suggestHour !== null" class="btn btn-sm btn-outline-primary py-0"
-              @click="moveItem(i, crowdInfo[i].suggestHour)" data-testid="crowd-move-btn">
+              @click="moveItem(i, crowdInfo[i].suggestHour)">
               Move to {{ formatHour(crowdInfo[i].suggestHour) }}
             </button>
             <button v-if="crowdInfo[i].swap" class="btn btn-sm btn-outline-secondary py-0"
               :title="'This at ' + formatHour(crowdInfo[i].swap.hour) + ', ' + crowdInfo[i].swap.name + ' at ' + formatHour(crowdInfo[i].swap.otherNewHour)"
-              @click="swapItems(i, crowdInfo[i].swap.index)" data-testid="crowd-swap-btn">
+              @click="swapItems(i, crowdInfo[i].swap.index)">
               Swap times with {{ shortName(crowdInfo[i].swap.name) }}
             </button>
           </div>
@@ -234,7 +234,7 @@
         </div>
 
         <!-- Transit time between stops -->
-        <div v-if="i < itinerary.length - 1 && item.transitToNext" class="text-center small text-muted my-1" data-testid="transit-badge">
+        <div v-if="i < itinerary.length - 1 && item.transitToNext" class="text-center small text-muted my-1">
           🚇 ~{{ item.transitToNext }} transit to next stop
         </div>
 
@@ -263,12 +263,12 @@
     </div>
 
     <!-- Wishlist -->
-    <div class="card p-3 mb-3" data-testid="wishlist-card">
+    <div class="card p-3 mb-3">
       <h5 class="mb-1">Wishlist</h5>
       <p class="small text-muted">Indoor backup places. If rain is forecast during an outdoor stop, you can swap one in.</p>
       <ul class="list-unstyled small mb-2">
         <li v-for="w in wishlist" :key="w.id" class="py-1 border-bottom">
-          <form v-if="editWishId === w.id" class="row g-2" @submit.prevent="saveEditWish(w)" novalidate>
+          <form v-if="editWishId === w.id" class="row g-2" @submit.prevent="saveEditWish(w)">
             <div class="col-md-5">
               <label :for="'wedit-name-' + w.id" class="visually-hidden">Wishlist place</label>
               <input :id="'wedit-name-' + w.id" v-model="wishEditForm.name" class="form-control form-control-sm" maxlength="120">
@@ -292,16 +292,16 @@
         </li>
         <li v-if="!wishlist.length" class="text-muted">Nothing here yet.</li>
       </ul>
-      <form class="row g-2" @submit.prevent="addWish" novalidate>
+      <form class="row g-2" @submit.prevent="addWish">
         <div class="col-md-5">
           <label for="wish-name" class="visually-hidden">Wishlist place</label>
-          <input id="wish-name" v-model="wishForm.name" class="form-control form-control-sm" maxlength="120" placeholder="Indoor place, e.g. teamLab Borderless" data-testid="wish-name">
+          <input id="wish-name" v-model="wishForm.name" class="form-control form-control-sm" maxlength="120" placeholder="Indoor place, e.g. teamLab Borderless">
         </div>
         <div class="col-md-5">
           <label for="wish-address" class="visually-hidden">Wishlist address</label>
           <input id="wish-address" v-model="wishForm.address" class="form-control form-control-sm" maxlength="200" placeholder="Address (optional)">
         </div>
-        <div class="col-md-2"><button type="submit" class="btn btn-outline-primary btn-sm w-100" data-testid="wish-add">Add</button></div>
+        <div class="col-md-2"><button type="submit" class="btn btn-outline-primary btn-sm w-100">Add</button></div>
       </form>
     </div>
   </div>
@@ -429,15 +429,20 @@ export default {
       if (this.startDate) {
         const end = this.endDate || this.startDate
         const days = []
-        const d = new Date(this.startDate + 'T00:00:00')
-        const last = new Date(end + 'T00:00:00')
+        const d = new Date(this.startDate)
+        const last = new Date(end)
         while (d <= last && days.length < 31) {
-          days.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'))
-          d.setDate(d.getDate() + 1)
+          days.push(d.toISOString().slice(0, 10)) // "2026-10-12"
+          d.setUTCDate(d.getUTCDate() + 1)        // move to the next day
         }
         return days
       }
-      return [...new Set(trip.stops.map((s) => s.date))].sort()
+      // No date range: use the days that have stops
+      const dates = []
+      for (const stop of trip.stops) {
+        if (!dates.includes(stop.date)) dates.push(stop.date)
+      }
+      return dates.sort()
     },
     tripDay() {
       return this.selectedDate ? DAY_NAMES[new Date(this.selectedDate + 'T00:00:00').getDay()] : ''
@@ -550,12 +555,13 @@ export default {
       return result
     },
     editDurations() {
-      const all = new Set(this.durationOptions)
-      if (this.editForm.duration) all.add(this.editForm.duration)
-      return [...all].sort((a, b) => a - b)
-    },
+      const all = this.durationOptions.slice() // a copy, so the original list isn't changed
+      if (this.editForm.duration && !all.includes(this.editForm.duration)) {
+        all.push(this.editForm.duration)
+      }
+      return all.sort((a, b) => a - b)
+    }
   },
-
   methods: {
     formatHour,
 
@@ -917,8 +923,7 @@ export default {
       const hour = Math.floor(min / 60);
       const mins = min % 60;
       return hour > 0 ? `${hour}h ${mins} mins` : `${mins} mins`; 
-  }
-
+    }
   }
 }
 </script>

@@ -3,11 +3,19 @@
 import { reactive } from 'vue'
 import axios from 'axios'
 
-const savedUser = localStorage.getItem('user')
+// A corrupted value in localStorage shouldn't crash the whole app on load
+function readSavedUser() {
+  try {
+    return JSON.parse(localStorage.getItem('user'))
+  } catch (err) {
+      return null
+    }
+  }
+
 
 export const auth = reactive({
   token: localStorage.getItem('token'),
-  user: savedUser ? JSON.parse(savedUser) : null
+  user: readSavedUser()
 })
 
 // Send the token with every axios request once logged in
@@ -30,3 +38,18 @@ export function logout() {
   localStorage.removeItem('user')
   delete axios.defaults.headers.common['Authorization']
 }
+
+// If the server says our token is invalid/expired, log out and go to /login.
+// (Uses window.location because importing the router here would be a circular import.)
+axios.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response && err.response.status === 401 && auth.token) {
+      logout()
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname)
+      }
+    }
+    return Promise.reject(err)
+  }
+)

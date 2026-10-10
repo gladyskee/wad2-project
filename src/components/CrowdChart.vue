@@ -35,7 +35,9 @@
     <!-- Same data as a table for screen readers -->
     <table class="visually-hidden">
       <caption>Typical crowds by hour on {{ dayName }}</caption>
-      <tr><th>Hour</th><th>Busyness</th></tr>
+      <thead>
+        <tr><th scope="col">Hour</th><th scope="col">Busyness</th></tr>
+      </thead>
       <tbody>
         <tr v-for="bar in bars" :key="'t' + bar.hour"><td>{{ bar.label }}</td><td>{{ bar.value }}%</td></tr>
       </tbody>

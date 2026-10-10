@@ -254,6 +254,10 @@ function onLocationChange() {
   stopLiveTracking()
   lastFetchedAt = null
   quakes.value = []
+  advisory.value = null
+  disasters.value = []
+  services.value = {}
+  locationInfo.value = null
   if (selectedLocation.value === 'live') {
     startLiveTracking()
   } else {
@@ -273,6 +277,7 @@ function onLocationChange() {
 */
 function simulateEarthquake() {
   if (!position.value) return
+  if (loading.value && !force) return // a fetch is already running
   quakes.value.unshift({
     id: 'sim-' + Date.now(),
     type: 'earthquake',
