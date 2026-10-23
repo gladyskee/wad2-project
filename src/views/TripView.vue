@@ -241,7 +241,7 @@ import AppIcon from '../components/AppIcon.vue'
 import LoadingSkeleton from '../components/LoadingSkeleton.vue'
 import TripRecap from '../components/TripRecap.vue'
 import TripEditModal from '../components/TripEditModal.vue'
-import { notify } from '../notify.js'
+import { notify, errorText } from '../notify.js'
 
 
 export default {
@@ -448,6 +448,7 @@ export default {
         this.trip.endDate = res.data.endDate
       } catch (err) {
         this.trip.endDate = before // couldn't save: put it back
+        notify(errorText(err, 'Could not change the trip dates.'))
       }
     },
     // A crew card asked to open another tab (Expenses, or Photos filtered to one person)

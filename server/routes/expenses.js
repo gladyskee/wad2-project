@@ -34,6 +34,8 @@ function cleanItem(x, travellers, id, addedBy) {
   const splitType = x.splitType === 'exact' ? 'exact' : 'equal'
   if (splitType === 'equal' && !people.length) return null
   if (splitType === 'exact' && !Object.keys(exact).length) return null
+  // Exact shares must add up to the bill (the form checks this too)
+  if (splitType === 'exact' && Math.abs(Object.values(exact).reduce((t, n) => t + n, 0) - amount) > 0.01) return null
   return {
     id, title, amount, currency: x.currency,
     category: CATEGORIES.includes(x.category) ? x.category : 'other',

@@ -69,9 +69,9 @@
           <p v-if="whereOf(w)" class="pv-where"><AppIcon name="map-pin" :size="13" /> {{ whereOf(w) }}</p>
 
           <!-- Progress towards a group pick -->
-          <div class="pv-progress" role="progressbar" :aria-valuenow="w.votes.length" aria-valuemin="0" :aria-valuemax="travellers.length"
-            :aria-label="w.votes.length + ' of ' + travellers.length + ' votes'">
-            <div class="pv-progress-fill" :style="{ width: (w.votes.length / Math.max(travellers.length, 1) * 100) + '%' }"></div>
+          <div class="pv-progress" role="progressbar" :aria-valuenow="count(w)" aria-valuemin="0" :aria-valuemax="travellers.length"
+            :aria-label="count(w) + ' of ' + travellers.length + ' votes'">
+            <div class="pv-progress-fill" :style="{ width: (count(w) / Math.max(travellers.length, 1) * 100) + '%' }"></div>
           </div>
 
           <!-- One button per traveller -->
@@ -92,7 +92,7 @@
           </div>
         </div>
 
-        <span class="pv-count" :aria-hidden="true">{{ w.votes.length }}/{{ travellers.length }}</span>
+        <span class="pv-count" :aria-hidden="true">{{ count(w) }}/{{ travellers.length }}</span>
       </article>
     </transition-group>
     </section>
@@ -101,6 +101,7 @@
 </template>
 
 <script>
+import { votesNeeded, yesVotes, isGroupPick } from '../voting.js'
 import { trip } from '../itineraryStore.js'
 import { placeStyle } from '../placeStyle.js'
 import CustomDropdown from './CustomDropdown.vue'
@@ -133,7 +134,7 @@ export default {
     },
     // More than half the group (2 of 3, 3 of 4, 3 of 5...)
     needed() {
-      return Math.floor(this.travellers.length / 2) + 1
+      return votesNeeded(this.travellers)
     },
     // Who the big Quick vote button is for: me (or the first person I can vote for)
     voter() {
@@ -154,7 +155,7 @@ export default {
     sorted() {
       const list = this.places.slice()
       if (this.sortBy === 'name') list.sort((a, b) => a.name.localeCompare(b.name))
-      else list.sort((a, b) => (b.votes || []).length - (a.votes || []).length)
+      else list.sort((a, b) => this.count(b) - this.count(a))
       return list
     },
     // Group picks first, then everything still being voted on
@@ -186,8 +187,12 @@ export default {
       if (street && street !== w.name && !parts.includes(street)) parts.push(street)
       return parts.join(' · ')
     },
+    // Yes votes from people still on the trip
+    count(w) {
+      return yesVotes(w, this.travellers).length
+    },
     isPick(w) {
-      return this.travellers.length > 0 && (w.votes || []).length >= this.needed
+      return this.travellers.length > 0 && isGroupPick(w, this.travellers)
     },
     // How many places this person hasn't said yes to yet
     leftFor(person) {

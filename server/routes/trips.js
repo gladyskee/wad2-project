@@ -4,8 +4,10 @@ import Trip from '../models/trip.js'
 import User from '../models/User.js'
 import Photo from '../models/Photo.js'
 import Group from '../models/Group.js'
+import SavedRoute from '../models/transport.js'
 import { requireAuth } from './auth.js'
 import { mergePacking, mergeById, sameStops } from '../merge.js'
+import { isGroupPick } from '../../src/voting.js'
 import { findTripFor, memberName, roleOf, ensureMembers, newInviteCode, accessQuery, addGroupMember } from '../tripAccess.js'
 
 const router = express.Router()
@@ -338,6 +340,16 @@ router.put('/:id/itinerary', requireAuth, async (req, res) => {
       return { ...w, votes: beforeVotes.filter((v) => !allowed.includes(v)).concat(mine) }
     })
 
+    // A saved place only goes on a day once the group voted for it (the planner checks this too)
+    const before = (latest.stops || []).map((st) => st.id)
+    for (const st of saveStops) {
+      if (before.includes(st.id)) continue
+      const wish = saveWish.find((w) => w.name.toLowerCase() === st.name.toLowerCase())
+      if (wish && !isGroupPick(wish, latest.travellers)) {
+        return res.status(400).json({ message: st.name + ' needs more than half the group to vote for it first.' })
+      }
+    }
+
     // One atomic step: save only if the version is still the one we merged with, and add 1 to it
     const filter = { _id: latest._id }
     if (sent !== null) filter.version = current === 0 ? { $in: [0, null] } : current // trips from before versions have none
@@ -361,6 +373,11 @@ router.put('/:id/dates', requireAuth, async (req, res) => {
   const endDate = String(req.body.endDate || '')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate) || (trip.startDate && endDate < trip.startDate)) {
     return res.status(400).json({ message: 'Invalid end date.' })
+  }
+  // Same rule as Edit trip: no stop may be left outside the trip's dates
+  const outside = (trip.stops || []).filter((s) => s.date > endDate)
+  if (outside.length) {
+    return res.status(400).json({ message: outside.length + (outside.length === 1 ? ' stop is' : ' stops are') + ' planned after ' + endDate + '. Move ' + (outside.length === 1 ? 'it' : 'them') + ' first.' })
   }
   trip.endDate = endDate
   await trip.save()
@@ -607,6 +624,8 @@ router.delete('/:id/guests/:name', requireAuth, async (req, res) => {
   if (used) return res.status(400).json({ message: name + ' is in some expenses, so they can\'t be removed.' })
   trip.travellers = trip.travellers.filter((t) => t !== name)
   await trip.save()
+  // Their votes on saved places go too
+  await Trip.updateOne({ _id: trip._id }, { $pull: { 'wishlist.$[].votes': name } })
   res.json({ travellers: trip.travellers })
 })
 
@@ -692,6 +711,16 @@ router.put('/:id', requireAuth, async (req, res) => {
     trip.version = (trip.version || 0) + 1 // open itineraries reload instead of saving old dates
   }
   await trip.save()
+  // Routes saved in Getting around are for a day of the trip, so they move with it
+  if (shift) {
+    const routes = await SavedRoute.find({ tripId: String(trip._id) })
+    for (const r of routes) {
+      for (const o of r.options) {
+        if (o.day && DATE_PATTERN.test(o.day)) o.day = new Date((dayNumber(o.day) + shift) * DAY).toISOString().slice(0, 10)
+      }
+      await r.save()
+    }
+  }
   res.json({ ...toClient(trip, req.userId), movedStops: shift ? stops.length : 0, shiftDays: shift })
 })
 

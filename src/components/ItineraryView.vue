@@ -12,7 +12,7 @@
     <!-- The itinerary: day navigator, timeline with weather + crowd icons, saved places drawer -->
     <ItineraryPlanner :days="dayList" :selected-date="selectedDate" :stops="itinerary"
       :wishlist="allWishlist" :scheduled-names="scheduledNames" :day-name="tripDay" :weather-blocks="dayWeather" :typical="typicalWeather" :prefs="dayPrefs"
-      :can-add-day="!isDemo && !!startDate" :day-counts="dayCounts" :day-issues="dayIssues" :destinations="destinations" :saved-routes="savedRoutes" :travellers="travellers"
+      :can-add-day="!isDemo && !!startDate" :day-counts="dayCounts" :locked-by-day="lockedByDay" :day-issues="dayIssues" :destinations="destinations" :saved-routes="savedRoutes" :travellers="travellers"
       @select-day="selectDay" @add-day="addDay" @remove-day="removeDay" @undo-day="undoDay" @add-place="openAddPlace" @go-vote="openVote"
       @apply="applyOptimized" @lock="setLocked" @schedule="scheduleWish" @unschedule="unscheduleStop" @status="plannerStatus = $event"
       @duration="setDuration" @move-day="moveToDay" @swap="swapWithWish" @edit="editStop" @open-transport="$emit('open-transport')"/>
@@ -164,6 +164,12 @@ export default {
       const counts = {}
       for (const s of trip.stops) counts[s.date] = (counts[s.date] || 0) + 1
       return counts
+    },
+    // A locked stop (booking) per day: those days can't be removed
+    lockedByDay() {
+      const days = {}
+      for (const s of trip.stops) if (s.locked) days[s.date] = s.name
+      return days
     },
     scheduledNames() {
       return trip.stops.map((s) => s.name)
@@ -373,8 +379,22 @@ export default {
       this.snapshotDays()
       this.$emit('set-end-date', this.shiftDate(this.endDate || this.startDate, 1))
     },
-    // Stops on the day go back to the wishlist; later days move one day earlier; the trip gets a day shorter
+    // Save the stops now (not in 800 ms), then change the end date: the server checks
+    // that no stop is left outside the trip's dates, so the stops have to be saved first
+    async saveThenSetEnd(endDate) {
+      clearTimeout(this.saveTimer)
+      this.saveTimer = null
+      if (this.persistKey !== this.lastSavedKey) await this.saveNow()
+      this.$emit('set-end-date', endDate)
+    },
+    // Stops on the day go back to the wishlist; later days move one day earlier; the trip gets a day shorter.
+    // Locked stops are bookings on a real date, so they never move: unlock them first.
     async removeDay(date) {
+      const booked = trip.stops.find((s) => s.locked && s.date >= date)
+      if (booked) {
+        this.showNotice(booked.name + ' is locked to ' + booked.date + ' (a booking), so this day can\'t be removed. Unlock it or move it first.')
+        return
+      }
       this.snapshotDays()
       const keep = []
       for (const s of trip.stops) {
@@ -389,20 +409,20 @@ export default {
       trip.stops = keep
       const newEnd = this.shiftDate(this.endDate, -1)
       if (this.selectedDate > newEnd) this.selectDay(newEnd)
-      this.$emit('set-end-date', newEnd)
       await this.updateTransitTimes()
       this.reportItinerary()
+      await this.saveThenSetEnd(newEnd)
     },
     async undoDay() {
       const u = this.dayUndo
       if (!u) return
       this.dayUndo = null
       loadFromServer({ stops: u.stops, wishlist: u.wishlist, version: this.tripVersion }, { local: true })
-      if (u.endDate !== this.endDate) this.$emit('set-end-date', u.endDate)
       this.selectDay(u.selectedDate)
       await Promise.all(trip.stops.map((item) => this.loadForecast(item)))
       await this.updateTransitTimes()
       this.reportItinerary()
+      if (u.endDate !== this.endDate) await this.saveThenSetEnd(u.endDate)
     },
     // "Add stop": places are found and saved in the Places tab, then dragged onto a day here
     // "Add stop": go to Places, telling it which day to come back to
@@ -463,6 +483,10 @@ export default {
           this.saveStatus = 'Someone else changed this trip, so their version was loaded.'
           this.showNotice('Someone in your group changed the same days at the same time as you, so their version was loaded. Your last change to the days was not saved, so please redo it.')
           await this.applyServerTrip(err.response.data.trip)
+        } else if (err.response && err.response.data && err.response.data.message) {
+          this.saveStatus = err.response.data.message
+          this.showNotice(err.response.data.message + ' Your last change was not saved.')
+          this.lastSavedKey = key // don't keep retrying the same change
         } else {
           this.saveStatus = 'Could not save changes. Is the server running?'
         }

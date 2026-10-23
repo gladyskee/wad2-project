@@ -389,7 +389,7 @@
               </div>
               <div class="ip-wish-text">
                 <span class="ip-wish-name">{{ w.name }}</span>
-                <small>{{ (w.votes || []).length }} of {{ needed }} votes needed</small>
+                <small>{{ yesVotes(w, travellers).length }} of {{ needed }} votes needed</small>
               </div>
               <button type="button" class="ip-vote" :aria-label="'Vote on ' + w.name + ' in Group decisions'" @click="emit('go-vote')">Vote</button>
             </div>
@@ -425,6 +425,7 @@ import StopSheet from './StopSheet.vue'
 import { codeForDestination, flagEmoji } from '../destinations.js'
 import AppIcon from './AppIcon.vue'
 import { transportPrefill } from '../savedRoutes.js'
+import { votesNeeded, yesVotes, isGroupPick } from '../voting.js'
 
 const props = defineProps({
   days: { type: Array, default: () => [] },
@@ -439,6 +440,7 @@ const props = defineProps({
   canAddDay: { type: Boolean, default: false },
   destinations: { type: Array, default: () => [] },     // the trip's cities (helps place stops on the map)
   dayCounts: { type: Object, default: () => ({}) },      // { '2026-10-22': 3 } stops per day
+  lockedByDay: { type: Object, default: () => ({}) },    // { '2026-10-22': 'Dinner reservation' } a locked stop on that day
   dayIssues: { type: Object, default: () => ({}) },     // { '2026-10-22': { issues: 2, load: 0.8 } } for the day strip
   savedRoutes: { type: Array, default: () => [] },      // routes saved in Getting around
   travellers: { type: Array, default: () => [] }        // everyone on the trip (for the majority vote rule)
@@ -586,6 +588,10 @@ function askRemoveDay() {
     for (const s of sample.value.stops) if (s.date === date) count++
   } else {
     count = props.dayCounts[date] || 0
+  }
+  if (!sampleMode.value && props.lockedByDay[date]) {
+    showToast(props.lockedByDay[date] + ' is locked to this day (a booking). Unlock it or move it before removing the day.', false)
+    return
   }
   const lines = []
   if (count) lines.push(count + ' stop' + (count === 1 ? '' : 's') + ' on this day go back to Saved places (nothing is deleted).')
@@ -747,9 +753,9 @@ const unscheduled = computed(() => {
 // On a group trip (2+ travellers), a saved place can only go on a day once more than half voted for it.
 // Solo trips skip voting: everything saved can be added.
 const votingOn = computed(() => !sampleMode.value && props.travellers.length >= 2)
-const needed = computed(() => Math.floor(props.travellers.length / 2) + 1) // 3 travellers -> 2, 4 -> 3
+const needed = computed(() => votesNeeded(props.travellers)) // 3 travellers -> 2, 4 -> 3
 function isPick(w) {
-  return !votingOn.value || (w.votes || []).length >= needed.value
+  return !votingOn.value || isGroupPick(w, props.travellers)
 }
 const picks = computed(() => {
   const list = []
