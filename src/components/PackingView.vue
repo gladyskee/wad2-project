@@ -262,6 +262,15 @@ export default {
     this.basePacking = JSON.parse(JSON.stringify(this.packing))
   },
 
+  // Pick up the group's ticks every 20 s while Packing is open (same as Photos)
+  mounted() {
+    if (this.tripId && this.tripId !== 'seoul') this.pollTimer = setInterval(this.poll, 20000)
+  },
+
+  beforeUnmount() {
+    clearInterval(this.pollTimer)
+  },
+
   methods: {
     toggleOption(list, key) {
       const i = list.indexOf(key)
@@ -292,6 +301,22 @@ export default {
       if (!name) return
       this.packing.custom.push({ id: 'mine-' + Date.now(), category, name, qty: 1 })
       this.newItem[category] = ''
+    },
+
+    async poll() {
+      // Only while Packing is on screen, and never over my own unsaved changes
+      if (!this.$el.offsetParent || document.hidden || this.saveKey !== this.lastSaved) return
+      try {
+        const res = await axios.get('/api/trips/' + this.tripId + '/packing')
+        if (this.saveKey !== this.lastSaved) return // I changed something while it loaded
+        const p = res.data.packing || {}
+        this.profile = { activities: res.data.activities, weather: res.data.weather, extras: res.data.extras }
+        this.packing = { checked: p.checked || {}, qty: p.qty || {}, removed: p.removed || [], custom: p.custom || [] }
+        this.basePacking = JSON.parse(JSON.stringify(this.packing))
+        this.lastSaved = this.saveKey
+      } catch (err) {
+        // try again next time
+      }
     },
 
     // Sends my changes; the server adds them to the latest list (so other people's ticks are kept)

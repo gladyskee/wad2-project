@@ -5,6 +5,7 @@ import User from '../models/User.js'
 import Photo from '../models/Photo.js'
 import Group from '../models/Group.js'
 import { requireAuth } from './auth.js'
+import { mergePacking, mergeById, sameStops } from '../merge.js'
 import { findTripFor, memberName, roleOf, ensureMembers, newInviteCode, accessQuery, addGroupMember } from '../tripAccess.js'
 
 const router = express.Router()
@@ -278,52 +279,79 @@ router.post('/:id/votes', requireAuth, async (req, res) => {
   res.json({ votes })
 })
 
-// PUT /api/trips/:id/itinerary  { stops: [...], wishlist: [...], version? }
-// "version" is the version the browser last saw. If someone else saved in between, the numbers
-// no longer match and we answer 409 with the latest trip instead of overwriting it (Gladys's idea).
-// Without a version (older pages) it just saves.
+// PUT /api/trips/:id/itinerary  { stops: [...], wishlist: [...], version?, base?: { stops, wishlist } }
+// "version" is the version the browser last saw. If someone else saved in between:
+//  - with "base" (the stops + wishlist as this browser last loaded them), the two saves are merged:
+//    saved places added/edited/removed by each person all stay, and the days keep whoever changed them.
+//    Only when BOTH people changed the days do we answer 409 with the latest trip.
+//  - without "base" (older pages) it's 409 straight away.
+// Without a version at all it just saves.
+const WISH_FIELDS = ['name', 'address', 'outdoor', 'type', 'city', 'duration', 'bookedVia', 'link']
 router.put('/:id/itinerary', requireAuth, async (req, res) => {
   const stops = cleanStops(req.body.stops)
   const wishlist = cleanWishlist(req.body.wishlist)
   if (!stops || !wishlist) return res.status(400).json({ message: 'Some itinerary details are invalid.' })
+  const base = req.body.base ? { stops: cleanStops(req.body.base.stops), wishlist: cleanWishlist(req.body.base.wishlist) } : null
+  if (base && (!base.stops || !base.wishlist)) return res.status(400).json({ message: 'Some itinerary details are invalid.' })
 
-  const trip = await findTripFor(req.userId, req.params.id)
-  if (!trip) return res.status(404).json({ message: 'Trip not found.' })
+  let sent = null
+  if (req.body.version !== undefined && req.body.version !== null) {
+    sent = Number(req.body.version)
+    if (!Number.isInteger(sent) || sent < 0) return res.status(400).json({ message: 'Invalid trip version. Please refresh the page.' })
+  }
+
+  let latest = await findTripFor(req.userId, req.params.id)
+  if (!latest) return res.status(404).json({ message: 'Trip not found.' })
 
   // Votes: you can only change your own (the organiser also for people without an account).
   // Everyone else's votes are kept exactly as they are saved.
-  const me = memberName(trip, req.userId)
+  const me = memberName(latest, req.userId)
   const allowed = [me]
-  if (roleOf(trip, req.userId) === 'owner') {
-    for (const t of trip.travellers) {
-      if (!trip.members.some((m) => m.name === t)) allowed.push(t)
+  if (roleOf(latest, req.userId) === 'owner') {
+    for (const t of latest.travellers) {
+      if (!latest.members.some((m) => m.name === t)) allowed.push(t)
     }
   }
-  for (const w of wishlist) {
-    const before = (trip.wishlist || []).find((x) => x.id === w.id)
-    const kept = before && Array.isArray(before.votes) ? before.votes.filter((v) => !allowed.includes(v)) : []
-    const mine = w.votes.filter((v) => allowed.includes(v))
-    w.votes = kept.concat(mine)
+  const conflict = async () => {
+    const fresh = await Trip.findById(latest._id)
+    return res.status(409).json({ message: 'Someone else changed this trip. Showing their latest version.', trip: toClient(fresh, req.userId) })
   }
 
-  const filter = { _id: trip._id }
-  if (req.body.version !== undefined && req.body.version !== null) {
-    const sent = Number(req.body.version)
-    if (!Number.isInteger(sent) || sent < 0) return res.status(400).json({ message: 'Invalid trip version. Please refresh the page.' })
-    // Trips saved before versions existed have none, so 0 also matches "missing"
-    filter.version = sent === 0 ? { $in: [0, null] } : sent
-  }
+  // Try a few times in case someone else saves in between
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const current = latest.version || 0
+    let saveStops = stops
+    let saveWish = wishlist
+    let merged = false
+    if (sent !== null && sent !== current) {
+      if (!base) return conflict()
+      if (sameStops(stops, base.stops)) saveStops = latest.stops // I didn't touch the days: keep theirs
+      else if (!sameStops(latest.stops, base.stops)) return conflict() // we both changed the days
+      saveWish = mergeById(latest.wishlist || [], base.wishlist, wishlist, WISH_FIELDS)
+      merged = true
+    }
+    saveWish = saveWish.map((w) => {
+      const before = (latest.wishlist || []).find((x) => x.id === w.id)
+      const beforeVotes = before && Array.isArray(before.votes) ? before.votes : []
+      const sentItem = wishlist.find((x) => x.id === w.id)
+      const mine = (sentItem ? sentItem.votes : beforeVotes).filter((v) => allowed.includes(v))
+      return { ...w, votes: beforeVotes.filter((v) => !allowed.includes(v)).concat(mine) }
+    })
 
-  // One atomic step: save only if the version still matches, and add 1 to it
-  const updated = await Trip.findOneAndUpdate(filter, { $set: { stops, wishlist }, $inc: { version: 1 } }, { new: true })
-  if (!updated) {
-    const latest = await Trip.findById(trip._id)
-    return res.status(409).json({ message: 'Someone else changed this trip. Showing their latest version.', trip: toClient(latest, req.userId) })
+    // One atomic step: save only if the version is still the one we merged with, and add 1 to it
+    const filter = { _id: latest._id }
+    if (sent !== null) filter.version = current === 0 ? { $in: [0, null] } : current // trips from before versions have none
+    const updated = await Trip.findOneAndUpdate(filter, { $set: { stops: saveStops, wishlist: saveWish }, $inc: { version: 1 } }, { new: true })
+    if (updated) {
+      // Notes on stops that were just removed go too
+      const stopIds = saveStops.map((st) => st.id)
+      await Trip.updateOne({ _id: latest._id }, { $pull: { comments: { stopId: { $nin: stopIds } } } })
+      return res.json({ ok: true, version: updated.version, merged, trip: merged ? toClient(updated, req.userId) : undefined })
+    }
+    if (!base) return conflict()
+    latest = await Trip.findById(latest._id)
   }
-  // Notes on stops that were just removed go too
-  const stopIds = stops.map((st) => st.id)
-  await Trip.updateOne({ _id: trip._id }, { $pull: { comments: { stopId: { $nin: stopIds } } } })
-  res.json({ ok: true, version: updated.version })
+  return conflict()
 })
 
 // PUT /api/trips/:id/dates  { endDate }  -> the planner's "+ Add Day" (anyone on the trip)
@@ -337,6 +365,13 @@ router.put('/:id/dates', requireAuth, async (req, res) => {
   trip.endDate = endDate
   await trip.save()
   res.json({ startDate: trip.startDate, endDate: trip.endDate })
+})
+
+// GET /api/trips/:id/packing  -> the packing list only (Packing checks for the group's ticks with this)
+router.get('/:id/packing', requireAuth, async (req, res) => {
+  const trip = await findTripFor(req.userId, req.params.id)
+  if (!trip) return res.status(404).json({ message: 'Trip not found.' })
+  res.json({ activities: trip.activities || [], weather: trip.weather || [], extras: trip.extras || [], packing: trip.packing || null })
 })
 
 // PUT /api/trips/:id/packing  { activities, weather, extras, packing: { checked, qty, removed, custom } }
@@ -368,51 +403,49 @@ router.put('/:id/packing', requireAuth, async (req, res) => {
   res.status(409).json({ message: 'Lots of people are editing the list. Please try again.' })
 })
 
-// Apply the changes between "base" and "mine" to "latest" (the list someone else may have changed meanwhile)
-function mergePacking(latest, base, mine) {
-  const out = { checked: { ...latest.checked }, qty: { ...latest.qty }, removed: latest.removed.slice(), custom: latest.custom.slice() }
-  for (const field of ['checked', 'qty']) {
-    const keys = new Set(Object.keys(base[field]).concat(Object.keys(mine[field])))
-    for (const k of keys) {
-      if (base[field][k] === mine[field][k]) continue // I didn't touch it
-      if (mine[field][k] === undefined) delete out[field][k]
-      else out[field][k] = mine[field][k]
-    }
-  }
-  for (const id of mine.removed) if (!base.removed.includes(id) && !out.removed.includes(id)) out.removed.push(id)
-  for (const id of base.removed) if (!mine.removed.includes(id)) out.removed = out.removed.filter((x) => x !== id)
-  for (const c of mine.custom) {
-    const before = base.custom.find((x) => x.id === c.id)
-    const i = out.custom.findIndex((x) => x.id === c.id)
-    if (!before && i < 0) out.custom.push(c) // I added it
-    else if (before && i >= 0 && (before.name !== c.name || before.qty !== c.qty)) out.custom[i] = c // I edited it
-  }
-  for (const c of base.custom) {
-    if (!mine.custom.some((x) => x.id === c.id)) out.custom = out.custom.filter((x) => x.id !== c.id) // I deleted it
-  }
-  return out
-}
-
-// PUT /api/trips/:id/albums  [{ id, name, icon }]  -> the trip's photo albums
-router.put('/:id/albums', requireAuth, async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id) || !Array.isArray(req.body) || req.body.length > 50) {
-    return res.status(400).json({ message: 'Albums are invalid.' })
-  }
+// PUT /api/trips/:id/albums  { albums: [{ id, name, icon }], base?: [...] }  -> the trip's photo albums
+// "base" = the albums as this browser last loaded them: albums added/renamed/deleted by
+// different people at the same time are merged (same idea as packing). A plain array still works.
+function cleanAlbums(list) {
+  if (!Array.isArray(list) || list.length > 50) return null
   const albums = []
-  for (const a of req.body) {
+  for (const a of list) {
     const name = a && typeof a.name === 'string' ? a.name.trim().slice(0, 60) : ''
-    if (!name) return res.status(400).json({ message: 'Every album needs a name.' })
+    if (!name) return null
     albums.push({ id: String(a.id || new mongoose.Types.ObjectId()).slice(0, 40), name, icon: String(a.icon || '📍').slice(0, 8) })
+  }
+  return albums
+}
+// GET /api/trips/:id/albums  -> the albums only (Photos checks for the group's changes with this)
+router.get('/:id/albums', requireAuth, async (req, res) => {
+  const trip = await findTripFor(req.userId, req.params.id)
+  if (!trip) return res.status(404).json({ message: 'Trip not found.' })
+  res.json({ albums: trip.photoAlbums || [] })
+})
+
+router.put('/:id/albums', requireAuth, async (req, res) => {
+  const body = Array.isArray(req.body) ? { albums: req.body } : req.body || {}
+  const mine = cleanAlbums(body.albums)
+  const base = body.base ? cleanAlbums(body.base) : null
+  if (!mongoose.isValidObjectId(req.params.id) || !mine || (body.base && !base)) {
+    return res.status(400).json({ message: 'Every album needs a name.' })
   }
   const trip = await findTripFor(req.userId, req.params.id)
   if (!trip) return res.status(404).json({ message: 'Trip not found.' })
-  trip.photoAlbums = albums
-  trip.markModified('photoAlbums')
-  await trip.save()
+  // Try a few times in case someone else saves in between (the albums must still be what we read)
+  let latest = trip.photoAlbums || []
+  let albums = null
+  for (let attempt = 0; attempt < 4 && !albums; attempt++) {
+    const merged = base ? mergeById(latest, base, mine, ['name', 'icon']) : mine
+    const updated = await Trip.findOneAndUpdate({ _id: trip._id, photoAlbums: latest }, { $set: { photoAlbums: merged } })
+    if (updated) albums = merged
+    else latest = (await Trip.findById(trip._id).select('photoAlbums')).photoAlbums || []
+  }
+  if (!albums) return res.status(409).json({ message: 'Lots of people are editing albums. Please try again.' })
   // Photos in a deleted album go back to Trip highlights
   const ids = albums.map((a) => a.id)
   await Photo.updateMany({ trip: trip._id, album: { $nin: ids.concat('') } }, { album: '' })
-  res.json({ ok: true })
+  res.json({ ok: true, albums })
 })
 
 // PUT /api/trips/:id/stay  { name, address, nameLocal, addressLocal, lat, lon } or {} to clear

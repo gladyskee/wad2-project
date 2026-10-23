@@ -241,6 +241,7 @@ import { CATEGORIES, CURRENCIES, currencyOptions, categoryOf, money, toHome, sha
 import AppIcon from './AppIcon.vue'
 
 export default {
+  emits: ['changed'],
   components: { AppIcon, ExpenseForm, CustomDropdown, ExchangeRates },
   props: {
     tripId: { type: String, default: '' },
@@ -557,6 +558,7 @@ export default {
         groupRates: data.groupRates || {}
       }
       if (currencyChanged) this.loadRates()
+      this.$emit('changed', this.state) // so Crew's balances update straight away
     },
 
     async poll() {

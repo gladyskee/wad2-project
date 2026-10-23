@@ -116,7 +116,7 @@ export default {
     canVoteFor: { type: Array, default: () => [] },    // whose votes I may change (me, + guests if organiser)
     tripId: { type: String, default: '' }              // where votes are saved ('' or 'seoul' = not saved)
   },
-  emits: ['go-wishlist'],
+  emits: ['go-wishlist', 'members-changed'],
 
   data() {
     return {
@@ -234,6 +234,12 @@ export default {
         }
       } catch (err) {
         this.applyVotes(ids, person, !yes) // it wasn't saved, so don't pretend it was
+        if (err.response && err.response.status === 403) {
+          // They joined with their own account since this page loaded, so only they can vote now
+          notify(person + ' has joined the trip, so only they can change their votes.')
+          this.$emit('members-changed')
+          return
+        }
         notify(errorText(err, 'Could not save your vote.'), () => this.setVotes(ids, person, yes))
       }
     },

@@ -58,8 +58,18 @@ export function loadDemo() {
   ]
 }
 
-// A saved trip from the server
-export function loadFromServer(saved) {
+// The stops + wishlist as last loaded from (or saved to) the server. Sent with each save as "base",
+// so the server can merge two people's changes instead of one overwriting the other.
+let base = null
+export function savedBase() {
+  return base
+}
+export function markSaved(shape) {
+  base = shape || savedShape()
+}
+
+// A saved trip from the server (local: true = an Undo snapshot, not what the server has)
+export function loadFromServer(saved, { local = false } = {}) {
   trip.version = saved.version || 0 // sent back when saving, so we never overwrite someone else's changes
   trip.stops = (saved.stops || []).map(runtimeStop)
   trip.wishlist = (saved.wishlist || []).map((w) => ({
@@ -67,6 +77,7 @@ export function loadFromServer(saved) {
     type: w.type || null, city: w.city || null, votes: Array.isArray(w.votes) ? w.votes : [],
     duration: w.duration || null, bookedVia: w.bookedVia || null, link: w.link || null
   }))
+  if (!local) markSaved()
 }
 
 // Only the fields worth saving (no crowd data, loading flags, etc.)
@@ -80,7 +91,10 @@ export function savedShape() {
 export async function saveTrip(tripId) {
   if (!tripId || tripId === 'seoul') return // the demo trip isn't saved
   try {
-    const res = await axios.put('/api/trips/' + tripId + '/itinerary', { ...savedShape(), version: trip.version })
+    const shape = savedShape()
+    const res = await axios.put('/api/trips/' + tripId + '/itinerary', { ...shape, version: trip.version, base })
+    if (res.data.merged) loadFromServer(res.data.trip) // someone else saved too: show both changes
+    else markSaved(shape)
     trip.version = res.data.version
   } catch (err) {
     // 409: someone else saved first. Show their version instead of overwriting it.

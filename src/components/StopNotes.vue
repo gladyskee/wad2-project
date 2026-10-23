@@ -60,7 +60,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 
@@ -101,6 +101,20 @@ async function load() {
   }
   loading.value = false
 }
+
+// Every 20 seconds while the notes are open: pick up the group's new notes (not while I'm editing one)
+async function refresh() {
+  if (!props.stopId || document.hidden || busy.value || editingId.value) return
+  try {
+    const res = await axios.get(url(), { params: { stop: props.stopId } })
+    notes.value = res.data
+    emit('count', notes.value.length)
+  } catch (err) {
+    // try again next time
+  }
+}
+const timer = setInterval(refresh, 20000)
+onBeforeUnmount(() => clearInterval(timer))
 
 async function add() {
   const text = newText.value.trim()

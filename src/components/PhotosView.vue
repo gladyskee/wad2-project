@@ -206,6 +206,7 @@ export default {
       REACTIONS,
       demo: this.tripId === 'seoul',
       albums: this.initialAlbums.slice(),
+      albumBase: this.initialAlbums.slice(), // the albums as last loaded (so the server can merge everyone's changes)
       photos: [],
       thumbs: {},          // photo id -> object URL
       loading: true,
@@ -347,7 +348,11 @@ export default {
     async poll() {
       if (!this.$el.offsetParent || document.hidden || this.uploadsLeft) return
       try {
-        const res = await axios.get('/api/trips/' + this.tripId + '/photos')
+        const [res, albums] = await Promise.all([
+          axios.get('/api/trips/' + this.tripId + '/photos'),
+          axios.get('/api/trips/' + this.tripId + '/albums')
+        ])
+        this.setAlbums(albums.data.albums)
         const list = []
         for (const p of res.data) {
           const old = this.photos.find((x) => x.id === p.id)
@@ -404,10 +409,18 @@ export default {
     async saveAlbums() {
       if (this.demo) return
       try {
-        await axios.put('/api/trips/' + this.tripId + '/albums', this.albums)
+        const res = await axios.put('/api/trips/' + this.tripId + '/albums', { albums: this.albums, base: this.albumBase })
+        this.setAlbums(res.data.albums)
       } catch (err) {
         notify(errorText(err, 'Could not save your albums.'), () => this.saveAlbums())
       }
+    },
+
+    // The albums from the server (with everyone's changes)
+    setAlbums(list) {
+      this.albums = list.slice()
+      this.albumBase = list.slice()
+      if (this.album !== 'all' && this.album !== '' && !list.some((a) => a.id === this.album)) this.album = 'all' // someone deleted it
     },
 
     async createAlbum(name, icon) {

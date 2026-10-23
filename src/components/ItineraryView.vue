@@ -27,7 +27,7 @@ import { prefs, loadPreferences } from '../preferences.js'
 import { getForecast } from '../crowd.js'
 import { fetchTravelTime } from '../services/maps.js'
 import { fetchWeatherForecast } from '../services/weatherService.js'
-import { trip, loadDemo, loadFromServer, savedShape, runtimeStop, newId } from '../itineraryStore.js'
+import { trip, loadDemo, loadFromServer, savedShape, savedBase, markSaved, runtimeStop, newId } from '../itineraryStore.js'
 import { savedRoutesFromDb, fetchSavedRoutes } from '../savedRoutes.js'
 import { codeForDestination, COUNTRY_CODES } from '../destinations.js'
 import DISCOVER from '../data/discoverCities.json'
@@ -397,7 +397,7 @@ export default {
       const u = this.dayUndo
       if (!u) return
       this.dayUndo = null
-      loadFromServer({ stops: u.stops, wishlist: u.wishlist, version: this.tripVersion })
+      loadFromServer({ stops: u.stops, wishlist: u.wishlist, version: this.tripVersion }, { local: true })
       if (u.endDate !== this.endDate) this.$emit('set-end-date', u.endDate)
       this.selectDay(u.selectedDate)
       await Promise.all(trip.stops.map((item) => this.loadForecast(item)))
@@ -443,18 +443,25 @@ export default {
       }
       this.saving = true
       const key = this.persistKey
-      const body = savedShape() // (with votes: the server keeps everyone else's as they are)
-      body.version = this.tripVersion
+      const shape = savedShape() // (with votes: the server keeps everyone else's as they are)
+      const body = { ...shape, version: this.tripVersion, base: savedBase() }
       try {
         const res = await axios.put('/api/trips/' + this.tripId + '/itinerary', body)
-        this.tripVersion = res.data.version
-        this.lastSavedKey = key
-        this.saveStatus = 'All changes saved'
+        if (res.data.merged) {
+          // Someone else saved too: the server kept both changes, show them
+          await this.applyServerTrip(res.data.trip)
+          this.saveStatus = 'All changes saved (with your group\'s latest changes)'
+        } else {
+          markSaved(shape)
+          this.tripVersion = res.data.version
+          this.lastSavedKey = key
+          this.saveStatus = 'All changes saved'
+        }
       } catch (err) {
         if (err.response && err.response.status === 409) {
           // Someone else saved first: show their version instead of overwriting it
           this.saveStatus = 'Someone else changed this trip, so their version was loaded.'
-          this.showNotice('Someone in your group saved at the same time as you, so their version was loaded. Your last change was not saved, so please redo it.')
+          this.showNotice('Someone in your group changed the same days at the same time as you, so their version was loaded. Your last change to the days was not saved, so please redo it.')
           await this.applyServerTrip(err.response.data.trip)
         } else {
           this.saveStatus = 'Could not save changes. Is the server running?'
@@ -476,6 +483,7 @@ export default {
     // Every 30 seconds: has someone else changed this trip?
     async pollTrip() {
       // Don't interrupt anything the user is in the middle of
+      if (!this.isDemo) fetchSavedRoutes(this.tripId) // routes saved in Getting around by anyone
       if (this.isDemo || this.saveTimer || this.saving || this.anyLoading) return
       if (this.persistKey !== this.lastSavedKey) return // we have unsaved changes of our own
       try {

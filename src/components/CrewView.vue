@@ -246,6 +246,10 @@ export default {
   },
 
   watch: {
+    // The trip's currency changed (Expenses): balances need rates for the new one
+    home() {
+      this.loadRates()
+    },
     crew(c) {
       if (!this.demo) this.profiles = { ...c }
     },
@@ -254,18 +258,21 @@ export default {
     }
   },
 
-  async created() {
-    if (this.balanceMap === null && !(this.expenses && this.expenses.items && this.expenses.items.length)) return
-    try {
-      const res = await axios.get('/api/rates', { params: { base: this.home } })
-      this.rates = res.data.rates
-    } catch (err) {
-      // balances are shown without converting other currencies
-    }
+  created() {
+    this.loadRates()
   },
 
   methods: {
     money,
+
+    async loadRates() {
+      try {
+        const res = await axios.get('/api/rates', { params: { base: this.home } })
+        this.rates = res.data.rates
+      } catch (err) {
+        // balances are shown without converting other currencies
+      }
+    },
 
     colorFor(name) {
       const i = Math.max(0, this.travellers.indexOf(name))

@@ -104,7 +104,8 @@ const areaOptions = computed(() => {
 })
 
 /* The stay shown on the card: the saved one, or the offline copy if we couldn't load the trip */
-const stayShown = computed(() => props.stay || stayCache.value)
+// The saved stay from the trip; the copy in this browser only when offline (or before the trip loads)
+const stayShown = computed(() => props.stay || (navigator.onLine && props.tripId !== 'seoul' ? null : stayCache.value))
 
 const bannerTitle = computed(() => {
   if (risk.value.state === 'clear') return 'All clear'
@@ -443,6 +444,7 @@ function saveTypedStay() {
 function rememberStayOffline(s) {
   try {
     if (s) localStorage.setItem('chuise-stay-' + props.tripId, JSON.stringify(s))
+    else localStorage.removeItem('chuise-stay-' + props.tripId) // cleared by someone in the group
   } catch (err) {
     // private mode etc.: the card just won't be available offline
   }
@@ -486,7 +488,10 @@ function mapsUrl(p) {
 
 /* ---------- lifecycle ---------- */
 watch(() => props.active, (open) => { if (open) start() })
-watch(() => props.stay, (s) => rememberStayOffline(s))
+watch(() => props.stay, (s) => {
+  stayCache.value = s
+  rememberStayOffline(s)
+})
 
 onMounted(() => {
   try {

@@ -158,7 +158,7 @@
         <transition name="guide" mode="out-in">
           <WishlistView v-if="placesTab === 'wishlist'" key="w" :destinations="itineraryInfo.destinations"
             :start-date="itineraryInfo.startDate" :end-date="itineraryInfo.endDate" />
-          <PlacesVoting v-else key="v" :trip-id="id" :travellers="itineraryInfo.travellers" :me="myName" :can-vote-for="canVoteFor" @go-wishlist="placesTab = 'wishlist'" />
+          <PlacesVoting v-else key="v" :trip-id="id" :travellers="itineraryInfo.travellers" :me="myName" :can-vote-for="canVoteFor" @go-wishlist="placesTab = 'wishlist'" @members-changed="reloadTrip" />
         </transition>
       </div>
       <div v-show="activeTab === 'packing'" :id="'pane-packing'" role="tabpanel">
@@ -172,7 +172,7 @@
       <div v-show="activeTab === 'expenses'" id="pane-expenses" role="tabpanel">
         <ExpensesView :key="'xp-' + id" :trip-id="id" :travellers="itineraryInfo.travellers"
           :start-date="itineraryInfo.startDate" :end-date="itineraryInfo.endDate"
-          :initial="isDemo ? null : trip.expenses" :me="myName" />
+          :initial="isDemo ? null : trip.expenses" :me="myName" @changed="trip.expenses = $event" />
       </div>
       <div v-show="activeTab === 'photos'" :id="'pane-photos'" role="tabpanel">
         <PhotosView :key="'ph-' + id" :trip-id="id" :travellers="itineraryInfo.travellers"
@@ -418,10 +418,13 @@ export default {
     }
     this.loading = false
     this.loadPhoto()
+    // Shared trips: pick up who joined, crew cards and the hotel every 30 seconds
+    if (!this.isDemo) this.pollTimer = setInterval(() => { if (!document.hidden) this.reloadTrip() }, 30000)
     window.addEventListener('resize', this.fitStage)
     this.$nextTick(this.fitStage)
   },
   beforeUnmount() {
+    clearInterval(this.pollTimer)
     window.removeEventListener('resize', this.fitStage)
   },
   methods: {
