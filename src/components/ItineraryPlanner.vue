@@ -133,7 +133,7 @@
     <!-- ===== Optimize preview ===== -->
     <transition name="ip-pop">
       <div v-if="preview" class="ip-preview" :class="{ same: !preview.better }">
-        <p class="mb-0 fw-semibold">{{ preview.better ? preview.summary : 'Your day is already in a good order.' }}</p>
+        <p class="mb-0 fw-semibold">{{ preview.summary }}</p>
         <div class="ip-preview-btns">
           <button v-if="preview.better" type="button" class="ip-cta small" @click="applyPreview">Apply</button>
           <button type="button" class="ip-outline small" @click="preview = null">{{ preview.better ? 'Dismiss' : 'OK' }}</button>
@@ -790,7 +790,26 @@ watch([work, unscheduled], () => {
 }, { immediate: true })
 
 const rain = computed(() => (props.weatherBlocks.length && !sampleMode.value ? rainFromBlocks(props.weatherBlocks) : null))
-const matrix = computed(() => travelMatrix(work.value))
+// Real travel times we already have, by "fromId>toId": a route saved in Getting around wins,
+// then Google's transit time to the next stop (ItineraryView asks for those). Other legs are estimated.
+const knownLegs = computed(() => {
+  const legs = {}
+  if (sampleMode.value) return legs
+  const sorted = props.stops.slice().sort((a, b) => a.hour - b.hour)
+  sorted.forEach((s, i) => {
+    if (sorted[i + 1] && s.transitSecs) legs[s.id + '>' + sorted[i + 1].id] = { min: Math.round(s.transitSecs / 60), mode: 'transit', source: 'google' }
+  })
+  for (const r of props.savedRoutes) {
+    const o = r.options && r.options[0]
+    if (!o) continue
+    const from = props.stops.find((s) => s.name === r.start)
+    const to = props.stops.find((s) => s.name === r.end)
+    if (from && to) legs[from.id + '>' + to.id] = { min: o.duration, mode: /walk/i.test(o.type) ? 'walk' : 'transit', source: 'saved', label: o.type }
+  }
+  return legs
+})
+const legMatrix = (list) => travelMatrix(list, knownLegs.value)
+const matrix = computed(() => legMatrix(work.value))
 const current = computed(() => scheduleAsIs(work.value, matrix.value))
 
 // ---------- optimize ----------
@@ -822,27 +841,9 @@ const opts = computed(() => ({
   crowdWeight: { low: 0.5, medium: 1, high: 2 }[props.prefs.crowdSensitivity] || 1
 }))
 
-// ---------- keep the day in line with Preferences ----------
-// When a preference changes, the open day is re-timed straight away (same order, locked stops stay).
-// When you open a day that doesn't fit your hours (e.g. after changing them), it's re-timed too.
-function fitDayToPrefs(note) {
-  if (previewing.value || !current.value.length) return
-  const items = retime(current.value.map((it) => it.stop))
-  const changes = []
-  let moved = false
-  for (const it of items) {
-    changes.push({ id: it.stop.id, hour: it.start })
-    if (Math.abs(it.start - it.stop.hour) > 0.01) moved = true
-  }
-  if (!moved) return
-  // Say what moved (shown in the Smart Schedule status strip)
-  let first = null
-  for (const it of items) {
-    if (!it.stop.virtual && Math.abs(it.start - it.stop.hour) > 0.01) { first = it; break }
-  }
-  save(changes)
-  if (note && first) noteChange(note + ': ' + first.stop.name + ' now starts at ' + formatHour(first.start))
-}
+// ---------- your hours vs the shared plan ----------
+// Day start/end (Preferences) are personal, but the plan is shared by the whole group.
+// So a day that doesn't fit your hours is only pointed out; Optimize Route fits it when you choose to.
 function outsideDay() {
   for (const it of current.value) {
     if (it.stop.locked) continue
@@ -850,8 +851,12 @@ function outsideDay() {
   }
   return false
 }
-watch(() => JSON.stringify(opts.value), () => fitDayToPrefs('Day re-timed to your preferences'))
-watch(dayShown, () => nextTick(() => { if (outsideDay()) fitDayToPrefs('Day re-timed to fit your hours') }))
+function noteOutsideDay() {
+  if (previewing.value || !outsideDay()) return
+  noteChange('Some stops are outside your hours (' + formatHour(opts.value.dayStart) + ' to ' + formatHour(opts.value.dayEnd) + '). Optimize Route fits them in.', 'warn')
+}
+watch(() => JSON.stringify(opts.value), noteOutsideDay)
+watch(dayShown, () => nextTick(noteOutsideDay))
 
 async function optimize() {
   preview.value = null
@@ -861,7 +866,7 @@ async function optimize() {
   await pause(350)
   phase.value = 'reorder'
   await pause(250)
-  preview.value = optimizeDay(work.value, rain.value, opts.value)
+  preview.value = optimizeDay(work.value, rain.value, { ...opts.value, known: knownLegs.value })
   phase.value = ''
 }
 function applyPreview() {
@@ -996,7 +1001,7 @@ function replanFrom(it, newDuration, what) {
   const current = { ...it.stop, duration: newDuration }
   const rest = all.slice(i + 1)
   const leaveAt = it.start + newDuration
-  const items = scheduleInOrder(rest.filter((s) => !s.locked), rest.filter((s) => s.locked), travelMatrix(all),
+  const items = scheduleInOrder(rest.filter((s) => !s.locked), rest.filter((s) => s.locked), legMatrix(all),
     { ...opts.value, dayStart: leaveAt, from: current, allStops: all })
   const changes = [{ id: current.id, hour: it.start }]
   let moved = 0
@@ -1090,7 +1095,7 @@ function endDrag() {
 function retime(list) {
   const flex = list.filter((s) => !s.locked)
   const locked = list.filter((s) => s.locked)
-  return scheduleInOrder(flex, locked, travelMatrix(list), opts.value)
+  return scheduleInOrder(flex, locked, legMatrix(list), opts.value)
 }
 
 function dropInto(slot) {
@@ -1261,6 +1266,8 @@ function lineIcon(emoji) {
 }
 function legText(it) {
   if (it.mode === 'break') return ''
+  if (it.source === 'saved') return it.travelMin + 'm · ' + it.label + ' (your saved route)'
+  if (it.source === 'google') return it.travelMin + 'm by transit'
   if (it.mode === 'walk') return it.travelMin + 'm walk (' + (it.km < 1 ? Math.round(it.km * 1000 / 50) * 50 + ' m' : it.km.toFixed(1) + ' km') + ')'
   if (it.mode === 'transit') return '~' + it.travelMin + 'm by transit (est.)'
   return '~' + it.travelMin + 'm (place not found on the map)'
@@ -1471,7 +1478,7 @@ const totals = computed(() => {
   let transit = 0
   for (const it of stopRows.value) {
     if (it.mode === 'walk') walk += it.km || 0
-    else if (it.mode === 'transit' || it.mode === 'unknown') transit += it.travelMin
+    else if (it.mode !== 'start') transit += it.travelMin
   }
   return { walkKm: walk.toFixed(1), transitMin: transit }
 })

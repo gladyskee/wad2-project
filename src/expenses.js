@@ -2,7 +2,7 @@
 //
 // expense    = { id, title, amount, currency, category, paidBy, date: 'YYYY-MM-DD',
 //                splitType: 'equal' | 'exact', people: ['Sarah', 'Amy'], exact: { Sarah: 30, Amy: 20 } }
-// settlement = { id, from, to, amount, date }   (amount is in the trip's home currency)
+// settlement = { id, from, to, amount, currency, date }   (currency = the home currency when it was paid; older ones have none)
 // rates      = { SGD: 1, KRW: 1030.5, ... }      (units of each currency per 1 home currency)
 
 // Category colours: categorical slots 1-6 in fixed order (validated for colour-blind separation)
@@ -76,8 +76,10 @@ export function balances(travellers, expenses, settlements, rates, home) {
     }
   }
   for (const s of settlements) {
-    if (result[s.from] !== undefined) result[s.from] += s.amount
-    if (result[s.to] !== undefined) result[s.to] -= s.amount
+    const amount = toHome(s.amount, s.currency || home, rates, home)
+    if (amount === null) continue
+    if (result[s.from] !== undefined) result[s.from] += amount
+    if (result[s.to] !== undefined) result[s.to] -= amount
   }
   return result
 }

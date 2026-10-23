@@ -86,7 +86,7 @@ const callLines = computed(() => EMERGENCY_NUMBERS[locationInfo.value && locatio
 const allAlerts = computed(() => {
   const list = []
   for (const d of disasters.value) {
-    list.push({ ...d, level: d.alertLevel === 'Red' ? 'warning' : 'advisory', what: d.type, where: d.title, severity: d.alertLevel + ' alert' + (d.details ? ' · ' + d.details : '') })
+    list.push({ ...d, level: d.alertLevel === 'Red' ? 'warning' : 'advisory', what: d.type, where: d.title + (d.distanceKm !== null && d.distanceKm !== undefined ? ' · ' + d.distanceKm + ' km away' : ''), severity: d.alertLevel + ' alert' + (d.details ? ' · ' + d.details : '') })
   }
   for (const q of quakes.value) {
     list.push({ ...q, level: q.magnitude >= 6 ? 'warning' : 'advisory', what: 'Earthquake M' + q.magnitude.toFixed(1), where: q.distanceKm + ' km from ' + placeName.value + (q.place ? ' · ' + q.place : ''), severity: q.tsunami ? 'Tsunami possible: move to high ground' : q.magnitude >= 6 ? 'Strong' : 'Light to moderate' })
@@ -207,7 +207,7 @@ async function refresh(force = false) {
     const [adv, eq, dis] = await Promise.allSettled([
       getTravelAdvisory(countryCode, countryName),
       getNearbyEarthquakes(lat, lon),
-      getDisasterAlerts(countryCode)
+      getDisasterAlerts(countryCode, lat, lon)
     ])
     if (!isCurrent()) return
     if (adv.status === 'fulfilled') advisory.value = adv.value

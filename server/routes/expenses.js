@@ -104,7 +104,9 @@ router.post('/settlements', requireAuth, async (req, res) => {
   if (!trip.travellers.includes(from) || !trip.travellers.includes(to) || from === to || !amountOk(amount)) {
     return res.status(400).json({ message: 'Invalid payment.' })
   }
-  const s = { id: String(new mongoose.Types.ObjectId()), from, to, amount, date: new Date().toISOString().slice(0, 10), addedBy: memberName(trip, req.userId) }
+  // Paid in the trip's currency at the time (so changing the currency later converts it, not re-reads it)
+  const currency = (trip.expenses && trip.expenses.homeCurrency) || EMPTY.homeCurrency
+  const s = { id: String(new mongoose.Types.ObjectId()), from, to, amount, currency, date: new Date().toISOString().slice(0, 10), addedBy: memberName(trip, req.userId) }
   await Trip.updateOne({ _id: trip._id }, { $push: { 'expenses.settlements': s } })
   res.status(201).json(await current(trip._id))
 })
@@ -144,6 +146,7 @@ router.delete('/rates/:code', requireAuth, async (req, res) => {
 })
 
 // PATCH /settings  { homeCurrency?, budget? }
+// The budget is saved with the currency it was typed in, so switching currency converts it.
 router.patch('/settings', requireAuth, async (req, res) => {
   const trip = await loadTrip(req, res)
   if (!trip) return
@@ -156,6 +159,7 @@ router.patch('/settings', requireAuth, async (req, res) => {
     const b = req.body.budget === null || req.body.budget === '' ? null : Number(req.body.budget)
     if (b !== null && !amountOk(b)) return res.status(400).json({ message: 'Invalid budget.' })
     set['expenses.budget'] = b
+    set['expenses.budgetCurrency'] = set['expenses.homeCurrency'] || (trip.expenses && trip.expenses.homeCurrency) || EMPTY.homeCurrency
   }
   await Trip.updateOne({ _id: trip._id }, { $set: set })
   res.json(await current(trip._id))

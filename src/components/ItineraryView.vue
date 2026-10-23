@@ -587,8 +587,8 @@ export default {
           stop.transitSecs = t.durationValue
         } catch (err) {
           if (err.response && err.response.status === 503) this.mapsOff = true
-          stop.transitToNext = '30 mins (est)'
-          stop.transitSecs = 1800
+          stop.transitToNext = null // no real time: the planner estimates this leg from the distance
+          stop.transitSecs = 0
         }
       }))
     },

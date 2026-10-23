@@ -50,12 +50,16 @@ export function travelBetween(a, b) {
   return { min: Math.round(8 + (km * 1.3) / 22 * 60), mode: 'transit', km }
 }
 
-// Every pair once, so the search doesn't redo the maths
-export function travelMatrix(stops) {
+// Every pair once, so the search doesn't redo the maths.
+// known = real travel times we already have, by "fromId>toId" ({ min, mode, source }); they beat the estimate.
+export function travelMatrix(stops, known = {}) {
   const matrix = {}
   for (const a of stops) {
     matrix[a.id] = {}
-    for (const b of stops) matrix[a.id][b.id] = a.id === b.id ? { min: 0, mode: 'walk', km: 0 } : travelBetween(a, b)
+    for (const b of stops) {
+      if (a.id === b.id) matrix[a.id][b.id] = { min: 0, mode: 'walk', km: 0 }
+      else matrix[a.id][b.id] = { ...travelBetween(a, b), ...(known[a.id + '>' + b.id] || {}) }
+    }
   }
   return matrix
 }
@@ -172,7 +176,9 @@ export function scheduleInOrder(order, locked, matrix, opts) {
     if (queue.length) {
       const s = queue[0]
       const t = travel(prev, s)
-      const start = quarter(time + t.min / 60 + (prev ? buffer : 0))
+      // Arriving before it opens? Start when it opens (the wait counts against this order)
+      const arrive = quarter(time + t.min / 60 + (prev ? buffer : 0))
+      const start = s.open != null && arrive < s.open ? quarter(s.open) : arrive
       const end = start + (s.duration || 1)
       // Would this stop run past the latest time to eat? Eat first.
       if (meal && end > meal.latest + 1e-9 && (!lock || Math.max(time, meal.from) + meal.duration <= lock.hour)) {
@@ -181,7 +187,7 @@ export function scheduleInOrder(order, locked, matrix, opts) {
       }
       // Fits before the next locked stop (including getting there and the buffer)?
       if (!lock || end + travel(s, lock).min / 60 + buffer <= lock.hour + 1e-9) {
-        items.push({ stop: s, start, travelMin: t.min, mode: t.mode, km: t.km, waitMin: 0, lateMin: 0 })
+        items.push({ stop: s, start, travelMin: t.min, mode: t.mode, km: t.km, source: t.source, label: t.label, waitMin: Math.round((start - arrive) * 60), lateMin: 0 })
         time = end
         prev = s
         queue.shift()
@@ -198,7 +204,7 @@ export function scheduleInOrder(order, locked, matrix, opts) {
       const t = travel(prev, lock)
       const arrive = time + t.min / 60
       items.push({
-        stop: lock, start: lock.hour, travelMin: t.min, mode: t.mode, km: t.km,
+        stop: lock, start: lock.hour, travelMin: t.min, mode: t.mode, km: t.km, source: t.source, label: t.label,
         waitMin: Math.max(0, Math.round((lock.hour - arrive) * 60)),
         lateMin: Math.max(0, Math.round((arrive - lock.hour) * 60))
       })
@@ -254,7 +260,7 @@ export function scheduleAsIs(stops, matrix) {
     const t = prev ? matrix[prev.id][s.id] : { min: 0, mode: 'start', km: 0 }
     const arrive = time === null ? s.hour : time + t.min / 60
     items.push({
-      stop: s, start: s.hour, travelMin: t.min, mode: t.mode, km: t.km,
+      stop: s, start: s.hour, travelMin: t.min, mode: t.mode, km: t.km, source: t.source, label: t.label,
       waitMin: 0, lateMin: Math.max(0, Math.round((arrive - s.hour) * 60))
     })
     time = s.hour + (s.duration || 1)
@@ -392,7 +398,7 @@ export function warningsFor(it, rainByHour, opts) {
 // ---------- the main function ----------
 export function optimizeDay(stops, rainByHour, opts = {}) {
   const options = { dayStart: 9, dayEnd: 21, ...opts }
-  const matrix = travelMatrix(stops)
+  const matrix = travelMatrix(stops, options.known) // known = real travel times (see travelMatrix)
   const locked = stops.filter((s) => s.locked)
   const flex = stops.filter((s) => !s.locked)
 
@@ -415,6 +421,7 @@ export function optimizeDay(stops, rainByHour, opts = {}) {
 
   const afterItems = scheduleInOrder(bestOrder, locked, matrix, options)
   const after = measure(afterItems, rainByHour, options)
+  const better = after.cost < before.cost - 1
   const dayHasRain = (rainByHour || []).some((p) => p >= 0.5)
   let real = 0
   for (const it of afterItems) {
@@ -425,9 +432,19 @@ export function optimizeDay(stops, rainByHour, opts = {}) {
   return {
     before: { items: beforeItems, ...before },
     after: { items: afterItems, ...after },
-    better: after.cost < before.cost - 1,
-    summary: summarize(before, after)
+    better,
+    summary: better ? summarize(before, after) : stillToFix(before)
   }
+}
+
+// No better order: say what is still wrong (if anything), so "good order" is never said about a broken day
+function stillToFix(m) {
+  const left = []
+  if (m.closed) left.push(m.closed + (m.closed === 1 ? ' stop is' : ' stops are') + ' closed at the planned time')
+  if (m.lateMin) left.push('you can\'t get to a stop in time (' + m.lateMin + ' min late)')
+  if (m.overtimeMin) left.push('the day runs ' + m.overtimeMin + ' min past your end time')
+  if (!left.length) return 'Your day is already in a good order.'
+  return 'No better order found, but ' + left.join(' and ') + '. Try moving a stop to another day.'
 }
 
 function summarize(before, after) {

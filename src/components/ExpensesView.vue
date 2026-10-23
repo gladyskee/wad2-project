@@ -45,7 +45,7 @@
               <div class="xp-budget-fill" :class="{ over: budgetPct > 100 }" :style="{ width: Math.min(100, budgetPct) + '%' }"></div>
             </div>
             <span class="xp-tile-sub">
-              {{ Math.round(budgetPct) }}% of {{ money(state.budget, home) }} budget
+              {{ budgetHome ? Math.round(budgetPct) + '% of ' + money(budgetHome, home) + ' budget' : 'Budget ' + money(state.budget, state.budgetCurrency) + ' (waiting for the exchange rate)' }}
               <button type="button" class="xp-link-light" @click="editBudget">Edit</button>
             </span>
           </template>
@@ -162,7 +162,7 @@
               <summary>Payments made ({{ state.settlements.length }})</summary>
               <ul>
                 <li v-for="s in state.settlements" :key="s.id">
-                  {{ s.from === me ? 'You' : s.from }} paid {{ s.to === me ? 'you' : s.to }} <span class="xp-num">{{ money(s.amount, home) }}</span>
+                  {{ s.from === me ? 'You' : s.from }} paid {{ s.to === me ? 'you' : s.to }} <span class="xp-num">{{ money(s.amount, s.currency || home) }}</span>
                   <button type="button" class="xp-link" @click="undoPayment(s.id)">Undo</button>
                 </li>
               </ul>
@@ -264,6 +264,7 @@ export default {
       state: {
         homeCurrency: saved.homeCurrency || 'SGD',
         budget: saved.budget || null,
+        budgetCurrency: saved.budgetCurrency || null, // the currency the budget was typed in
         items: saved.items || [],
         settlements: saved.settlements || [],
         groupRates: saved.groupRates || {}
@@ -348,8 +349,13 @@ export default {
       return sum
     },
 
+    // The budget in today's trip currency (it was set in budgetCurrency; older budgets have none)
+    budgetHome() {
+      if (!this.state.budget) return null
+      return toHome(this.state.budget, this.state.budgetCurrency || this.home, this.rates, this.home)
+    },
     budgetPct() {
-      return this.state.budget ? (this.total / this.state.budget) * 100 : 0
+      return this.budgetHome ? (this.total / this.budgetHome) * 100 : 0
     },
 
     balanceMap() {
@@ -536,7 +542,7 @@ export default {
         const knownPay = this.state.settlements.map((x) => x.id)
         for (const p of data.settlements || []) {
           if (!knownPay.includes(p.id) && p.addedBy && p.addedBy !== this.me) {
-            this.toast(p.addedBy, p.from + ' paid ' + p.to + ' ' + money(p.amount, data.homeCurrency || this.home))
+            this.toast(p.addedBy, p.from + ' paid ' + p.to + ' ' + money(p.amount, p.currency || data.homeCurrency || this.home))
           }
         }
       }
@@ -553,6 +559,7 @@ export default {
       this.state = {
         homeCurrency: data.homeCurrency || 'SGD',
         budget: data.budget || null,
+        budgetCurrency: data.budgetCurrency || null,
         items: data.items || [],
         settlements: data.settlements || [],
         groupRates: data.groupRates || {}
@@ -597,7 +604,7 @@ export default {
     },
 
     markPaid(p) {
-      if (this.demo) this.state.settlements.push({ id: 's' + Date.now(), from: p.from, to: p.to, amount: p.amount, date: new Date().toISOString().slice(0, 10) })
+      if (this.demo) this.state.settlements.push({ id: 's' + Date.now(), from: p.from, to: p.to, amount: p.amount, currency: this.home, date: new Date().toISOString().slice(0, 10) })
       else this.send('post', '/settlements', { from: p.from, to: p.to, amount: p.amount })
     },
 
@@ -631,13 +638,14 @@ export default {
     },
 
     editBudget() {
-      this.budgetInput = this.state.budget
+      this.budgetInput = this.budgetHome ? Math.round(this.budgetHome) : this.state.budget
       this.budgetEditing = true
       this.$nextTick(() => this.$refs.budget && this.$refs.budget.focus())
     },
 
     saveBudget() {
       this.state.budget = this.budgetInput > 0 ? this.budgetInput : null
+      this.state.budgetCurrency = this.home
       this.budgetEditing = false
       if (!this.demo) this.send('patch', '/settings', { budget: this.state.budget })
     },

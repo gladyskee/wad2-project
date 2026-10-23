@@ -228,22 +228,41 @@ export async function getNearbyEarthquakes(lat, lon, radiusKm = 300, days = 3) {
   })
 }
 
-/* GDACS: Orange/Red alerts from the last 7 days that affect this country. ";" must stay unencoded. */
-export async function getDisasterAlerts(countryCode, days = 7) {
+/* How far each kind of disaster reaches (km from its centre). A flood in Hokkaido is not a risk in Tokyo.
+   Droughts cover whole regions (one point for 20+ countries), so they count anywhere in the country. */
+export const DISASTER_REACH_KM = { EQ: 300, TC: 500, FL: 150, VO: 100, DR: Infinity, WF: 100, TS: 500 }
+
+/* Keep a GDACS event if it is within its reach of lat/lon. Events without a position are kept (can't tell). */
+export function nearDisaster(f, lat, lon) {
+  const c = f.geometry && f.geometry.type === 'Point' ? f.geometry.coordinates : null
+  if (!c || lat === undefined || lat === null) return { near: true, distanceKm: null }
+  const distanceKm = Math.round(haversineKm(lat, lon, c[1], c[0]))
+  const reach = DISASTER_REACH_KM[f.properties.eventtype] || 200
+  return { near: distanceKm <= reach, distanceKm: reach === Infinity ? null : distanceKm }
+}
+
+/* GDACS: Orange/Red alerts from the last 7 days in this country, close enough to lat/lon to matter. ";" must stay unencoded. */
+export async function getDisasterAlerts(countryCode, lat, lon, days = 7) {
   const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const data = await getJSON(`${GDACS_URL}?alertlevel=Orange;Red&fromdate=${from}`)
   const typeNames = { EQ: 'Earthquake', TC: 'Tropical cyclone', FL: 'Flood', VO: 'Volcano', DR: 'Drought', WF: 'Wildfire', TS: 'Tsunami' }
-  return (data.features || [])
-    .filter((f) => (f.properties.affectedcountries || []).some((c) => c.iso2 === countryCode))
-    .map((f) => ({
+  const list = []
+  for (const f of data.features || []) {
+    if (!(f.properties.affectedcountries || []).some((c) => c.iso2 === countryCode)) continue
+    const { near, distanceKm } = nearDisaster(f, lat, lon)
+    if (!near) continue
+    list.push({
       id: 'gdacs-' + f.properties.eventtype + f.properties.eventid,
       type: typeNames[f.properties.eventtype] || 'Disaster',
       title: f.properties.name,
       alertLevel: f.properties.alertlevel, // "Orange" or "Red"
       details: f.properties.severitydata && f.properties.severitydata.severitytext,
       time: f.properties.fromdate ? new Date(f.properties.fromdate) : null,
-      url: f.properties.url && f.properties.url.report
-    }))
+      url: f.properties.url && f.properties.url.report,
+      distanceKm
+    })
+  }
+  return list
 }
 
 /*
