@@ -239,6 +239,8 @@ import ExchangeRates from './ExchangeRates.vue'
 import CustomDropdown from './CustomDropdown.vue'
 import { CATEGORIES, CURRENCIES, currencyOptions, categoryOf, money, toHome, sharesOf, balances, settleUp, demoExpenses } from '../expenses.js'
 import AppIcon from './AppIcon.vue'
+import { localDate } from '../dates.js'
+import { userSettings } from '../userSettings.js'
 
 export default {
   emits: ['changed'],
@@ -459,7 +461,7 @@ export default {
     },
 
     defaultDate() {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDate()
       if (this.startDate && today < this.startDate) return this.startDate
       if (this.endDate && today > this.endDate) return this.endDate
       return today
@@ -532,6 +534,7 @@ export default {
 
     // Take the server's copy. With notify, say what other people added.
     applyServer(data, notify) {
+      if (!userSettings.expenseAlerts) notify = false // "Expense activity" is off in Settings
       if (notify) {
         const known = this.state.items.map((x) => x.id)
         for (const x of data.items || []) {
@@ -604,7 +607,7 @@ export default {
     },
 
     markPaid(p) {
-      if (this.demo) this.state.settlements.push({ id: 's' + Date.now(), from: p.from, to: p.to, amount: p.amount, currency: this.home, date: new Date().toISOString().slice(0, 10) })
+      if (this.demo) this.state.settlements.push({ id: 's' + Date.now(), from: p.from, to: p.to, amount: p.amount, currency: this.home, date: localDate() })
       else this.send('post', '/settlements', { from: p.from, to: p.to, amount: p.amount })
     },
 

@@ -18,6 +18,8 @@
 
   Emits "risk-change" so the trip page can show a banner and flag outdoor stops.
 */
+import { formatDistance, userSettings } from '../userSettings.js'
+import { localDate } from '../dates.js'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 import SafetyRadar from './SafetyRadar.vue'
@@ -49,7 +51,7 @@ const REFRESH_MS = 5 * 60 * 1000
 const MOVE_THRESHOLD_KM = 1
 
 /* ---------- state ---------- */
-const today = new Date().toISOString().slice(0, 10)
+const today = localDate()
 const tripIsNow = computed(() => !!props.startDate && !!props.endDate && props.startDate <= today && today <= props.endDate)
 const area = ref('dest-0')          // 'dest-<index>' | 'live' | 'demo-<key>'
 const position = ref(null)          // { lat, lon }
@@ -337,6 +339,7 @@ function start() {
 
 /* ---------- alerts ---------- */
 function notifyNewAlerts() {
+  if (!userSettings.hazardAlerts) return // turned off in Settings (the Safety tab still lists them)
   for (const a of allAlerts.value) {
     if (notifiedIds.includes(a.id)) continue
     notifiedIds.push(a.id)
@@ -617,7 +620,7 @@ onUnmounted(() => {
                     <span v-else-if="o.openingHours" class="sf-badge hours" :title="o.openingHours">🕒 {{ o.status.text === 'Open 24 hours' ? 'Open 24 hours' : o.openingHours }}</span>
                   </span>
                 </span>
-                <span class="sf-nearest-dist">{{ o.dist.toFixed(1) }} km</span>
+                <span class="sf-nearest-dist">{{ formatDistance(o.dist) }}</span>
                 <a v-if="o.phone" :href="telOf(o.phone)" class="sf-go" :aria-label="'Call ' + o.name">Call</a>
                 <a :href="mapsUrl(o)" target="_blank" rel="noopener" class="sf-go" :aria-label="'Directions to ' + o.name">Go ↗</a>
               </li>

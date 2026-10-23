@@ -49,6 +49,15 @@ export function codeForDestination(label) {
   return COUNTRY_CODES[parts[parts.length - 1]] || ''
 }
 
+// The country of a destination: "Kyoto, Japan" -> "Japan". Older trips typed just "Tokyo":
+// use the popular list to find its country. Unknown -> '' (better not counted than counted wrong).
+export function countryOf(label) {
+  const parts = label.split(', ')
+  if (parts.length > 1 || COUNTRY_CODES[label]) return parts[parts.length - 1]
+  const known = POPULAR_DESTINATIONS.find((d) => d.split(', ')[0].toLowerCase() === label.toLowerCase())
+  return known ? countryOf(known) : ''
+}
+
 // "JP" -> 🇯🇵 (a flag emoji is two special "regional indicator" letters)
 export function flagEmoji(code) {
   if (!code || code.length !== 2) return '📍'

@@ -160,28 +160,43 @@ const WIKI_KINDS = [
   { words: ['theatre', 'theater', 'opera', 'philharmonic', 'circus'], type: 'attraction', indoor: true },
   { words: ['bazaar', 'market', 'mall'], type: 'shop', indoor: true },
   { words: ['mosque', 'church', 'cathedral', 'temple', 'shrine', 'monastery', 'synagogue'], type: 'heritage', indoor: true },
-  { words: ['park', 'garden', 'lake', 'gorge', 'waterfall', 'canyon', 'national park', 'reserve'], type: 'park', indoor: false },
+  { words: ['park', 'garden', 'gardens', 'lake', 'gorge', 'waterfall', 'canyon', 'reserve'], type: 'park', indoor: false },
   { words: ['monument', 'memorial', 'square', 'palace', 'tower', 'fortress', 'castle', 'statue', 'gate'], type: 'attraction', indoor: false }
 ]
 
+// Titles ending in these are about something else ("Ueno Park Building", "Shrine Station")
+const NOT_PLACES = ['building', 'station', 'school', 'university', 'college', 'hotel', 'street', 'road', 'avenue',
+  'line', 'office', 'hospital', 'company', 'bank', 'headquarters', 'apartments', 'bridge', 'interchange', 'exit']
+
+// What a title is about = the LAST kind word in it ("Meiji Shrine Garden" is a garden). null = not a sight.
+export function wikiKind(title) {
+  const words = title.replace(/\(.*?\)/g, '').toLowerCase().split(/[^a-z]+/).filter(Boolean)
+  if (!words.length || NOT_PLACES.includes(words[words.length - 1])) return null
+  for (let i = words.length - 1; i >= 0; i--) {
+    const kind = WIKI_KINDS.find((k) => k.words.includes(words[i]))
+    if (kind) return kind
+  }
+  return null
+}
+
 async function wikiNearby(lat, lon, destination) {
+  // generator=geosearch + pageprops: the articles near the centre, with their Wikidata id (for fame)
   const url = 'https://en.wikipedia.org/w/api.php?' + new URLSearchParams({
-    action: 'query', list: 'geosearch', gscoord: lat + '|' + lon, gsradius: '10000', gslimit: '100', format: 'json'
+    action: 'query', generator: 'geosearch', ggscoord: lat + '|' + lon, ggsradius: '10000', ggslimit: '100',
+    prop: 'pageprops', ppprop: 'wikibase_item', format: 'json'
   })
   const response = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(8000) })
   const data = await response.json()
   const out = []
-  for (const g of (data.query && data.query.geosearch) || []) {
-    const title = g.title.toLowerCase()
-    let kind = null
-    for (const k of WIKI_KINDS) {
-      for (const w of k.words) {
-        if (!kind && title.includes(w)) kind = k
-      }
-    }
-    if (kind) out.push({ name: g.title, type: kind.type, indoor: kind.indoor, address: g.title + ', ' + destination, wiki: 'en:' + g.title, rank: 0 })
+  for (const g of Object.values((data.query && data.query.pages) || {})) {
+    const kind = wikiKind(g.title)
+    if (!kind) continue
+    out.push({ name: g.title, type: kind.type, indoor: kind.indoor, address: g.title + ', ' + destination, wiki: 'en:' + g.title,
+      wikidata: (g.pageprops && g.pageprops.wikibase_item) || null, rank: 0, source: 'wikipedia' })
   }
-  return out
+  // Most famous first, same as the OpenStreetMap list
+  await addFame(out)
+  return out.sort((a, b) => b.rank - a.rank)
 }
 
 // Fame of each place = how many Wikipedia languages have an article on it (Wikidata "sitelinks")
@@ -240,7 +255,9 @@ router.get('/attractions', requireAuth, async (req, res) => {
   // Use the saved list if it is recent and not empty (an empty list means an earlier lookup went wrong)
   // (lists saved before places were ranked by fame have no "rank" and are looked up again)
   const ranked = saved && saved.items.length && saved.items[0].rank !== undefined
-  if (ranked && (Date.now() - saved.fetchedAt.getTime()) / 86400000 < CACHE_DAYS) return res.json(saved.items)
+  // A Wikipedia-only list (OpenStreetMap was down) is kept for an hour, then OpenStreetMap is tried again
+  const maxDays = saved && saved.fallback ? 1 / 24 : CACHE_DAYS
+  if (ranked && (Date.now() - saved.fetchedAt.getTime()) / 86400000 < maxDays) return res.json(saved.items)
 
   try {
     // 1. Where is it?
@@ -355,8 +372,11 @@ router.get('/attractions', requireAuth, async (req, res) => {
     }
     if (!top.length) throw new Error('no source answered')
 
-    // Saved only when OpenStreetMap answered (a list of just the hand-picked sights is tried again next time)
-    if (top.length && (osm.elements || []).length) await Attraction.findOneAndUpdate({ key }, { key, items: top, fetchedAt: new Date() }, { upsert: true })
+    // Saved when OpenStreetMap answered; a Wikipedia-only list is saved for an hour (see above).
+    // (A list of just the hand-picked sights is tried again next time.)
+    const fromOsm = (osm.elements || []).length > 0
+    const fromWiki = top.some((x) => x.source === 'wikipedia')
+    if (fromOsm || fromWiki) await Attraction.findOneAndUpdate({ key }, { key, items: top, fetchedAt: new Date(), fallback: !fromOsm }, { upsert: true })
     res.json(top)
   } catch (err) {
     console.error('Attractions lookup failed for "' + destination + '":', err.message)

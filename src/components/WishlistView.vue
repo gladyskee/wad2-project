@@ -175,7 +175,7 @@
     <section v-for="sec in sections" :key="sec.dest" class="mt-5" :aria-label="'Popular in ' + sec.city">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <h3 class="wl-heading mb-0">{{ sec.flag }} Popular in {{ sec.city }}</h3>
-        <span v-if="sec.list.length" class="small text-muted">{{ sec.list.length }} places · from OpenStreetMap</span>
+        <span v-if="sec.list.length" class="small text-muted">{{ sec.list.length }} places · from {{ sec.list.every((p) => p.source === 'wikipedia') ? 'Wikipedia' : 'OpenStreetMap' }}</span>
       </div>
 
       <div v-if="sec.loading" aria-busy="true">

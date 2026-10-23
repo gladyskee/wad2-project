@@ -87,7 +87,7 @@
         {{ phaseText }}
       </button>
       <span class="ip-totals" title="Getting between today's stops">
-        <span><AppIcon name="footprints" :size="15" /> {{ totals.walkKm }} km</span>
+        <span><AppIcon name="footprints" :size="15" /> {{ totals.walk }}</span>
         <span><AppIcon name="train" :size="15" /> {{ totals.transitMin }} min</span>
       </span>
       <!-- Only shows up when something on this day needs a look -->
@@ -426,6 +426,7 @@ import { codeForDestination, flagEmoji } from '../destinations.js'
 import AppIcon from './AppIcon.vue'
 import { transportPrefill } from '../savedRoutes.js'
 import { votesNeeded, yesVotes, isGroupPick } from '../voting.js'
+import { formatTemp, formatDistance } from '../userSettings.js'
 
 const props = defineProps({
   days: { type: Array, default: () => [] },
@@ -1274,7 +1275,7 @@ function legText(it) {
   if (it.mode === 'break') return ''
   if (it.source === 'saved') return it.travelMin + 'm · ' + it.label + ' (your saved route)'
   if (it.source === 'google') return it.travelMin + 'm by transit'
-  if (it.mode === 'walk') return it.travelMin + 'm walk (' + (it.km < 1 ? Math.round(it.km * 1000 / 50) * 50 + ' m' : it.km.toFixed(1) + ' km') + ')'
+  if (it.mode === 'walk') return it.travelMin + 'm walk (' + formatDistance(it.km) + ')'
   if (it.mode === 'transit') return '~' + it.travelMin + 'm by transit (est.)'
   return '~' + it.travelMin + 'm (place not found on the map)'
 }
@@ -1322,18 +1323,18 @@ function weatherOf(it) {
     if (t) {
       const wetMonth = t.rainyDays != null && t.rainyDays >= 12
       return {
-        icon: wetMonth ? '🌦️' : t.temp >= 24 ? '☀️' : '⛅', text: '~' + t.temp + '°', tone: 'none',
-        title: 'Typical for ' + t.month + ' in ' + t.place + ': about ' + t.temp + '°C' +
+        icon: wetMonth ? '🌦️' : t.temp >= 24 ? '☀️' : '⛅', text: '~' + formatTemp(t.temp, true), tone: 'none',
+        title: 'Typical for ' + t.month + ' in ' + t.place + ': about ' + formatTemp(t.temp) +
           (t.rainyDays != null ? ', rain on about ' + t.rainyDays + ' days of the month' : '') + '. The live forecast shows about 5 days before.'
       }
     }
     return { icon: '🌤️', text: '–', tone: 'none', title: 'No forecast yet (forecasts reach about 5 days ahead)' }
   }
   const wet = it.stop.outdoor && rainDuring(rain.value, it.start, it.stop.duration) >= 0.5
-  const temp = b.temp != null ? b.temp + '°' : ''
+  const temp = b.temp != null ? formatTemp(b.temp, true) : ''
   return {
     icon: b.icon, text: temp || b.condition, tone: wet ? 'bad' : 'ok',
-    title: b.condition + (temp ? ', ' + temp + 'C' : '') + (wet ? ' · outdoors in the rain' : '')
+    title: b.condition + (temp ? ', ' + formatTemp(b.temp) : '') + (wet ? ' · outdoors in the rain' : '')
   }
 }
 function crowdOf(it) {
@@ -1486,7 +1487,7 @@ const totals = computed(() => {
     if (it.mode === 'walk') walk += it.km || 0
     else if (it.mode !== 'start') transit += it.travelMin
   }
-  return { walkKm: walk.toFixed(1), transitMin: transit }
+  return { walk: formatDistance(walk), transitMin: transit }
 })
 
 // ---------- numbered stops (same colour on the list and the map) ----------

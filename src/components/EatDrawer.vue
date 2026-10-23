@@ -73,6 +73,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import axios from 'axios'
 import { travelBetween } from '../dayOptimizer.js'
 import { openStatus } from '../services/safetyService.js'
+import { formatDistance } from '../userSettings.js'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
@@ -176,7 +177,7 @@ const shown = computed(() => {
       open: status.open,
       openText: status.open === true ? 'Open at ' + formatHour(hour) : status.open === false ? 'Closed at ' + formatHour(hour) : 'Hours not listed',
       walkMin: walk ? walk.min : 99,
-      walkText: walk ? (walk.mode === 'walk' ? '🚶 ' + walk.min + ' min (' + Math.round(walk.km * 1000 / 50) * 50 + ' m)' : '🚇 ' + walk.min + ' min') : '',
+      walkText: walk ? (walk.mode === 'walk' ? '🚶 ' + walk.min + ' min (' + formatDistance(walk.km) + ')' : '🚇 ' + walk.min + ' min') : '',
       fitsYou: fits(p)
     })
   }

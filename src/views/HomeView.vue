@@ -293,7 +293,7 @@
 import axios from 'axios'
 import { auth } from '../auth.js'
 import CustomDropdown from '../components/CustomDropdown.vue'
-import { POPULAR_DESTINATIONS, codeForDestination, flagEmoji } from '../destinations.js'
+import { POPULAR_DESTINATIONS, codeForDestination, countryOf, flagEmoji } from '../destinations.js'
 import AppIcon from '../components/AppIcon.vue'
 import TravelMap from '../components/TravelMap.vue'
 import { needsSetup, setupDone } from '../onboarding.js'
@@ -330,6 +330,7 @@ export default {
       // Destination type-ahead
       destOpen: false,
       destActive: -1,        // highlighted suggestion (keyboard / mouse)
+      destError: '',         // typed a place that isn't in the suggestions
       destRemote: [],        // results from the online place search
       destLoading: false,
       destTimer: null,
@@ -403,8 +404,8 @@ export default {
       for (const t of real) {
         for (const d of t.destinations) {
           if (!cities.includes(d)) cities.push(d)
-          const c = codeForDestination(d) || d.split(', ').pop()
-          if (!countries.includes(c)) countries.push(c)
+          const c = countryOf(d)
+          if (c && !countries.includes(c)) countries.push(c)
         }
         if (t.startDate && t.endDate) days += Math.round((new Date(t.endDate) - new Date(t.startDate)) / DAY_MS) + 1
         // Distance along the route, place to place
@@ -524,7 +525,8 @@ export default {
       const result = { name: '', destination: '', startDate: '', endDate: '' }
 
       if (this.touched.name) result.name = t.name.trim() ? 'success' : 'error'
-      if (t.destinations.length) result.destination = 'success'
+      if (this.destError) result.destination = 'error'
+      else if (t.destinations.length) result.destination = 'success'
       else if (this.touched.destination) result.destination = t.destination.trim() ? '' : 'error'
       // Past dates are greyed out in the calendar; typing one in still shows an error
       if (t.startDate) result.startDate = t.startDate < this.todayStr ? 'error' : 'success'
@@ -536,7 +538,8 @@ export default {
     messages() {
       const msg = { name: '', destination: '', startDate: '', endDate: '' }
       if (this.states.name === 'error') msg.name = 'Please give your trip a name'
-      if (this.states.destination === 'error') msg.destination = 'Where are you going? Add at least one destination'
+      if (this.destError) msg.destination = this.destError
+      else if (this.states.destination === 'error') msg.destination = 'Where are you going? Add at least one destination'
       else if (this.newTrip.destinations.length === 0) msg.destination = ''
       else if (this.newTrip.destinations.length === 1) msg.destination = 'Going to more places? Add another'
       else msg.destination = this.newTrip.destinations.length + ' destinations, in this order'
@@ -567,6 +570,7 @@ export default {
     },
     // ----- Destination type-ahead -----
     onDestInput() {
+      this.destError = ''
       this.destOpen = true
       this.destActive = -1
       // Wait until the user pauses typing (300 ms) before searching online
@@ -606,6 +610,7 @@ export default {
         this.newTrip.destinations.push(clean)
       }
       this.newTrip.destination = ''
+      this.destError = ''
       this.destRemote = []
       this.destActive = -1
       this.touched.destination = true
@@ -627,10 +632,11 @@ export default {
     // Up/Down to move, Enter to pick, Escape to close
     onDestKeydown(e) {
       const count = this.destOptions.length
-      // Enter with nothing highlighted: add exactly what was typed
+      // Enter with nothing highlighted: "Kyoto, Japan" as typed, else the best suggestion
+      // (just "Tokyo" has no country, which the flags, weather and safety checks need)
       if (e.key === 'Enter' && (this.destActive < 0 || !this.destOpen || count === 0)) {
         e.preventDefault()
-        if (this.newTrip.destination.trim()) this.pickDestination(this.newTrip.destination)
+        this.addTyped()
         return
       }
       // Backspace in an empty box removes the last destination
@@ -651,6 +657,20 @@ export default {
       } else if (e.key === 'Escape') {
         this.destOpen = false
       }
+    },
+
+    // What's typed in the box: "Kyoto, Japan" as it is, else the best suggestion.
+    // Just "Tokyo" has no country (flags, weather and safety checks need it). Returns false if nothing fits.
+    addTyped() {
+      const typed = this.newTrip.destination.trim()
+      if (!typed) return true
+      if (codeForDestination(typed)) this.pickDestination(typed)
+      else if (this.destOptions.length) this.pickDestination(this.destOptions[0].label)
+      else {
+        this.destError = this.destLoading ? 'Still searching, one moment…' : 'Pick a place from the suggestions so we know which country it is in.'
+        return false
+      }
+      return true
     },
 
     onDestBlur() {
@@ -778,7 +798,7 @@ export default {
       for (const key in this.touched) this.touched[key] = true
       const name = this.newTrip.name.trim()
       // Anything still typed in the box counts too
-      if (this.newTrip.destination.trim()) this.pickDestination(this.newTrip.destination)
+      if (!this.addTyped()) return
       const destinations = this.newTrip.destinations
       if (!name || !destinations.length) {
         this.$nextTick(() => {

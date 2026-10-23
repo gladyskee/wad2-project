@@ -49,7 +49,7 @@
               <section v-else-if="tab === 'weather'" aria-label="Weather">
                 <template v-if="!blocks.length">
                   <p v-if="typical" class="ss-lead">
-                    Usually about <strong>{{ typical.temp }}°C</strong> in {{ typical.place }} in {{ typical.month }}<template v-if="typical.rainyDays === 0">, and it's usually dry</template><template v-else-if="typical.rainyDays === 1">,
+                    Usually about <strong>{{ formatTemp(typical.temp) }}</strong> in {{ typical.place }} in {{ typical.month }}<template v-if="typical.rainyDays === 0">, and it's usually dry</template><template v-else-if="typical.rainyDays === 1">,
                     with rain on about 1 day of the month</template><template v-else-if="typical.rainyDays != null">,
                     with rain on about {{ typical.rainyDays }} days of the month</template>.
                   </p>
@@ -148,6 +148,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import CrowdChart from './CrowdChart.vue'
 import CustomDropdown from './CustomDropdown.vue'
 import { formatHour } from '../crowd.js'
+import { formatTemp } from '../userSettings.js'
 import AppIcon from './AppIcon.vue'
 import StopNotes from './StopNotes.vue'
 

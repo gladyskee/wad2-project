@@ -212,6 +212,7 @@ import { ref, reactive, computed, watch, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import { auth, logout, saveLogin } from '../auth.js'
+import { userSettings } from '../userSettings.js'
 import { CURRENCIES } from '../expenses.js'
 import { prefs, loadPreferences, savePreferences } from '../preferences.js'
 import { formatHour } from '../crowd.js'
@@ -249,7 +250,7 @@ const savedEmail = ref('')
 const emailError = ref('')
 const diet = ref([])
 const phone = ref('')
-const settings = reactive({ currency: 'SGD', units: 'metric', hazardAlerts: true, expenseAlerts: true })
+const settings = userSettings // shared: other pages follow these straight away
 
 const user = computed(() => auth.user || { name: '', username: '' })
 const initial = computed(() => (user.value.name || '?').charAt(0).toUpperCase())

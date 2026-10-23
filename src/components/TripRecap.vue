@@ -23,6 +23,8 @@
 import axios from 'axios'
 import TravelMap from './TravelMap.vue'
 import { codeForDestination } from '../destinations.js'
+import { userSettings } from '../userSettings.js'
+import { toHome } from '../expenses.js'
 
 // Straight-line distance between two { lat, lon } points, in km
 function kmBetween(a, b) {
@@ -96,7 +98,8 @@ export default {
         { value: this.travellers.length, label: this.travellers.length === 1 ? 'Traveller' : 'Travellers' },
         { value: this.photoCount === null ? '…' : this.photoCount, label: this.photoCount === 1 ? 'Photo' : 'Photos' }
       ]
-      if (km >= 1) list.push({ value: Math.round(km).toLocaleString(), label: 'km between cities' })
+      const miles = userSettings.units === 'imperial'
+      if (km >= 1) list.push({ value: Math.round(miles ? km * 0.621371 : km).toLocaleString(), label: (miles ? 'mi' : 'km') + ' between cities' })
       if (this.spend && this.spend.total > 0) {
         list.push({
           value: this.spend.currency + ' ' + Math.round(this.spend.total).toLocaleString(),
@@ -136,11 +139,23 @@ export default {
       try {
         const res = await axios.get('/api/trips/' + this.tripId + '/expenses')
         const home = res.data.homeCurrency || 'SGD'
+        // Other currencies are converted like in Expenses: live rates, the group's own rates on top
+        let rates = {}
+        try {
+          rates = (await axios.get('/api/rates', { params: { base: home } })).data.rates || {}
+        } catch (err) {
+          // without rates, other currencies are counted as "other"
+        }
+        for (const c in res.data.groupRates || {}) {
+          const g = res.data.groupRates[c]
+          if (g && g.base === home && g.rate > 0) rates[c] = g.rate
+        }
         let total = 0
         let other = 0
         for (const e of res.data.items || []) {
-          if (!e.currency || e.currency === home) total += Number(e.amount) || 0
-          else other++
+          const amount = toHome(Number(e.amount) || 0, e.currency || home, rates, home)
+          if (amount === null) other++
+          else total += amount
         }
         this.spend = { total, currency: home === 'SGD' ? 'S$' : home, other }
       } catch (err) {

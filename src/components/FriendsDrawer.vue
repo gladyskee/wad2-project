@@ -165,6 +165,7 @@
 </template>
 
 <script setup>
+import { localDate } from '../dates.js'
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import { auth } from '../auth.js'
@@ -216,7 +217,7 @@ const hint = computed(() => {
 
 // Trips that haven't ended yet
 const upcomingTrips = computed(() => {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDate()
   const out = []
   for (const t of trips.value || []) {
     if (!t.endDate || t.endDate >= today) out.push(t)

@@ -18,7 +18,7 @@
         </router-link>
         <span class="trip-nav-name" :title="headerTitle">{{ headerTitle }}</span>
 
-        <TripTabs :model-value="activeTab" @update:model-value="goToTab" :tabs="shownTabs" :alert-key="safetyWarning ? 'safety' : ''" class="trip-tabs" />
+        <TripTabs :model-value="activeTab" @update:model-value="goToTab" :tabs="shownTabs" :alert-key="shownWarning ? 'safety' : ''" class="trip-tabs" />
       </nav>
 
       <!-- Trip title -->
@@ -94,8 +94,8 @@
         </div>
 
         <!-- Safety banner: shown on every tab when SafetyLayer reports High/Critical risk -->
-        <div v-if="safetyWarning" class="alert alert-danger d-flex justify-content-between align-items-center" role="alert">
-          <span><AppIcon name="alert" :size="16" /> {{ safetyWarning }}</span>
+        <div v-if="shownWarning" class="alert alert-danger d-flex justify-content-between align-items-center" role="alert">
+          <span><AppIcon name="alert" :size="16" /> {{ shownWarning }}</span>
           <button class="btn btn-sm btn-outline-danger" @click="activeTab = 'safety'">View safety</button>
         </div>
 
@@ -242,6 +242,8 @@ import LoadingSkeleton from '../components/LoadingSkeleton.vue'
 import TripRecap from '../components/TripRecap.vue'
 import TripEditModal from '../components/TripEditModal.vue'
 import { notify, errorText } from '../notify.js'
+import { userSettings, loadUserSettings } from '../userSettings.js'
+import { localDate } from '../dates.js'
 
 
 export default {
@@ -313,7 +315,7 @@ export default {
     tripPhase() {
       const t = this.itineraryInfo
       if (!t.startDate) return 'before'
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDate()
       if (today < t.startDate) return 'before'
       if (t.endDate && today > t.endDate) return 'after'
       return 'during'
@@ -341,6 +343,10 @@ export default {
         }
       }
       return list
+    },
+    // The risk banner on every tab, unless "Hazard advisories" is off in Settings
+    shownWarning() {
+      return userSettings.hazardAlerts ? this.safetyWarning : ''
     },
     joinedNames() {
       if (this.isDemo) return ['Sarah', 'John', 'Amy']
@@ -408,6 +414,7 @@ export default {
   async mounted() {
     // Remove "?welcome=1" from the address so the guide doesn't come back on refresh
     if (this.showGuide) this.$router.replace({ query: {} })
+    loadUserSettings() // units, base currency, alerts (in the background)
     if (!this.isDemo) {
       try {
         const res = await axios.get('/api/trips/' + this.id)
