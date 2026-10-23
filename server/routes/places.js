@@ -246,6 +246,11 @@ function guessType(name) {
   return 'attraction'
 }
 
+// Destinations whose lookup just failed (key -> time). The map services rate-limit us when asked
+// again and again, so after a failure we wait a couple of minutes before asking them again.
+const failedLookups = new Map()
+const RETRY_AFTER_MS = 2 * 60 * 1000
+
 router.get('/attractions', requireAuth, async (req, res) => {
   const destination = (req.query.destination || '').trim()
   if (!destination || destination.length > 80) return res.json([])
@@ -258,6 +263,12 @@ router.get('/attractions', requireAuth, async (req, res) => {
   // A Wikipedia-only list (OpenStreetMap was down) is kept for an hour, then OpenStreetMap is tried again
   const maxDays = saved && saved.fallback ? 1 / 24 : CACHE_DAYS
   if (ranked && (Date.now() - saved.fetchedAt.getTime()) / 86400000 < maxDays) return res.json(saved.items)
+  // Failed a moment ago: don't ask again yet. An older saved list is better than nothing.
+  const sinceFail = Date.now() - (failedLookups.get(key) || 0)
+  if (sinceFail < RETRY_AFTER_MS) {
+    if (saved && saved.items.length) return res.json(saved.items)
+    return res.status(502).json({ message: 'Could not load popular places right now. Try again in a few minutes.' })
+  }
 
   try {
     // 1. Where is it?
@@ -377,10 +388,14 @@ router.get('/attractions', requireAuth, async (req, res) => {
     const fromOsm = (osm.elements || []).length > 0
     const fromWiki = top.some((x) => x.source === 'wikipedia')
     if (fromOsm || fromWiki) await Attraction.findOneAndUpdate({ key }, { key, items: top, fetchedAt: new Date(), fallback: !fromOsm }, { upsert: true })
+    failedLookups.delete(key)
     res.json(top)
   } catch (err) {
     console.error('Attractions lookup failed for "' + destination + '":', err.message)
-    res.status(502).json({ message: 'Could not load popular places right now. Try again in a minute.' })
+    failedLookups.set(key, Date.now())
+    // The services are busy (or limiting us): the last saved list, even an old one, still works
+    if (saved && saved.items.length) return res.json(saved.items)
+    res.status(502).json({ message: 'Could not load popular places right now. Try again in a few minutes.' })
   }
 })
 
