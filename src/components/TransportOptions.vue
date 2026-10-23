@@ -1,11 +1,12 @@
 <script setup>
     import {computed, ref, watch, onMounted} from 'vue'
+    import axios from 'axios'
     import { savedRoutesFromDb, fetchSavedRoutes, timeZones, cityZones, transportPrefill } from '../savedRoutes.js';
     import CustomDropdown from './CustomDropdown.vue'
     
     const props = defineProps({
         tripId: String, 
-        destination: Object,
+        destination: String,
         stops: Array,
         stay: Object,
         startDate: [String, Object, Date],
@@ -81,7 +82,6 @@
 
     // auto-select the zone from the trip destination 
     watch(() => props.destination, (dest) => {
-        console.log('destination prop:', dest, typeof dest);
         const name = (typeof dest === 'string' ? dest : dest?.name || '').toLowerCase();
         const match = Object.keys(cityZones).find(city => name.includes(city));
         if (match) timeZone.value = cityZones[match];
@@ -130,9 +130,8 @@
                 queryParams.set('timeType', timeType.value);
             }
 
-            const res = await fetch(`/api/directions?${queryParams}`);
-            if (!res.ok) throw new Error(`Request failed (${res.status})`);
-            options.value = await res.json();
+            const res = await axios.get(`/api/directions?${queryParams}`);
+            options.value = res.data;
         } catch(error) {
             console.error('Could not load directions', error);
             options.value = [];
@@ -212,13 +211,23 @@
     function formatDuration(min) {
         const hour = Math.floor(min / 60);
         const mins = min % 60;
-        return hour > 0 ? `${hour} hour ${mins} mins` : `${mins} mins`;
+        const minText = `${mins} min${mins === 1 ? '' : 's'}`;
+        return hour > 0 ? `${hour} hour${hour === 1 ? '' : 's'} ${minText}` : minText;
+    }
+
+    // Google Maps with the same start and end, for what Google's API doesn't give us
+    // (fares, taxi prices, train routes in Japan). travelmode: transit / driving / walking
+    function mapsUrl(opt) {
+        const mode = !opt ? 'transit' : /walk/i.test(opt.type) ? 'walking' : /taxi|car/i.test(opt.type) ? 'driving' : 'transit';
+        return 'https://www.google.com/maps/dir/?' + new URLSearchParams({
+            api: '1', origin: addressOf(startPoint.value) || '', destination: addressOf(endPoint.value) || '', travelmode: mode
+        });
     }
 
     // format cost
     function formatCost(opt) {
         if (!opt || opt.cost === null || opt.cost === undefined) {
-            return 'Not available';
+            return 'Fare not provided by Google';
         }
         // only when cost is 0
         if (opt.cost === 0) {
@@ -274,27 +283,7 @@
 
 // sends toggle request to backend and refreshes state
     async function toggleSaved(option) {
-        console.log('--- 1. toggleSaved clicked ---');
-        console.log('Current state:', {
-            tripId: props.tripId,
-            start: startPoint.value,
-            end: endPoint.value,
-            option: {
-                ...option,
-                day: selectedDay.value,
-                time: selectedTime.value,
-                timeType: timeType.value
-
-            }
-        });
-        if (!startPoint.value || !endPoint.value || !props.tripId) {
-                console.warn('⚠️ Guard triggered! Missing required data:', {
-                start: startPoint.value,
-                end: endPoint.value,
-                tripId: props.tripId
-            });
-            return;
-        }
+        if (!startPoint.value || !endPoint.value || !props.tripId) return;
 
         const optionToSave = {
             ...option,
@@ -304,27 +293,13 @@
         };
 
         try {
-            console.log('--- 2. Sending POST to /api/directions/toggle ---');
-            const res = await fetch('/api/directions/toggle', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    tripId: props.tripId,
-                    start: startPoint.value,
-                    end: endPoint.value,
-                    option: optionToSave
-                })
+            await axios.post('/api/directions/toggle', {
+                tripId: props.tripId,
+                start: startPoint.value,
+                end: endPoint.value,
+                option: optionToSave
             });
-            console.log('--- 3. Response Status:', res.status);
-
-            if (res.ok) {
-                const data = await res.json();
-                console.log('--- 4. Toggle success response from backend:', data);
-                await fetchSavedRoutes(props.tripId); // re-fetch from mongoDB to sync state
-            } else {
-                const err = await res.json();
-                console.error('❌ Server error response:', err);
-            }
+            await fetchSavedRoutes(props.tripId); // re-fetch from mongoDB to sync state
         } catch(error) {
             console.error('Error saving option:', error);
         }
@@ -389,7 +364,11 @@
         </div>
         <!-- Empty State -->
         <div v-else-if="!options.length" class="text-center text-muted py-3">
-            {{ endPoint ? 'No travel options found for this route.' : 'Select a destination to see travel options.' }}
+            <template v-if="endPoint">
+                Google has no travel options for this route here (it has no train data for Japan, for example).
+                <a :href="mapsUrl(null)" target="_blank" rel="noopener">Open it in Google Maps ↗</a>
+            </template>
+            <template v-else>Select a destination to see travel options.</template>
         </div>
 
         <!-- Options Content -->
@@ -412,7 +391,8 @@
                             </span>
                         </div>
                         <!-- Action Button -->
-                        <div class="col-4 text-end">
+                        <div class="col-12 d-flex gap-2 justify-content-end">
+                            <a :href="mapsUrl(opt)" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">Maps ↗</a>
                             <button type="button" class="btn btn-sm" :class="isSaved(opt) ? 'btn-outline-danger' : 'btn-outline-primary'" 
                             @click="toggleSaved(opt)">
                                 {{ isSaved(opt) ? 'Unsave' : 'Save' }}
@@ -448,7 +428,8 @@
                                     {{ formatCost(opt) }}
                                 </span>
                             </td>
-                            <td class="text-center">
+                            <td class="text-center text-nowrap">
+                                <a :href="mapsUrl(opt)" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary me-1">Maps ↗</a>
                                 <button type="button" class="btn btn-sm" :class="isSaved(opt) ? 'btn-outline-danger' : 'btn-outline-primary'" 
                                 @click="toggleSaved(opt)">
                                     {{ isSaved(opt) ? 'Unsave' : 'Save' }}

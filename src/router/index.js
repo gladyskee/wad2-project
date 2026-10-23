@@ -9,6 +9,7 @@ import JoinView from '../views/JoinView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import DiscoverView from '../views/DiscoverView.vue'
 import LandingView from '../views/LandingView.vue'
+import NotFoundView from '../views/NotFoundView.vue'
 import { auth } from '../auth.js'
 
 const routes = [
@@ -24,7 +25,9 @@ const routes = [
   { path: '/join/:code', name: 'Join', component: JoinView, props: true, meta: { requiresAuth: true } },
   { path: '/login', name: 'Login', component: LoginView, meta: { hideNav: true } },
   { path: '/signup', name: 'Signup', component: SignupView, meta: { hideNav: true } },
-  { path: '/forgot-password', name: 'ForgotPassword', component: ForgotPasswordView, meta: { hideNav: true } }
+  { path: '/forgot-password', name: 'ForgotPassword', component: ForgotPasswordView, meta: { hideNav: true } },
+  // Any other address
+  { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFoundView }
 ]
 
 const router = createRouter({

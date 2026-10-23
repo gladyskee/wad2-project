@@ -67,6 +67,7 @@
             </div>
           </li>
         </ul>
+        <p v-else-if="isMe" class="ts-muted small mt-2 mb-0">That's you. Type a friend's username.</p>
         <p v-else-if="query.replace('@', '').trim().length >= 3 && !searching && searched" class="ts-muted small mt-2 mb-0">
           No account starts with "@{{ query.replace('@', '').trim() }}". Send them the link instead.
         </p>
@@ -221,6 +222,10 @@ export default {
   },
 
   computed: {
+    // Typed my own username (the search leaves me out)
+    isMe() {
+      return !!auth.user && this.query.replace('@', '').trim().toLowerCase() === (auth.user.username || '').toLowerCase()
+    },
     // Friends whose name or username contains what's typed
     shownFriends() {
       const q = this.friendFilter.replace('@', '').trim().toLowerCase()

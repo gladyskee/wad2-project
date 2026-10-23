@@ -1,17 +1,17 @@
 import { ref } from 'vue';
+import axios from 'axios';
 
 export const savedRoutesFromDb = ref([]);
 export const transportPrefill = ref(null);   // { start, end, day, time, timeType }
 
 export async function fetchSavedRoutes(tripId) {
   if (!tripId) return;
+  if (tripId === 'seoul') return; // the demo trip has no saved routes
   try {
-    const res = await fetch(`/api/directions/saved?tripId=${encodeURIComponent(tripId)}`);
-    if (res.ok) {
-      const data = await res.json();
-      // Directly assign the fresh array from MongoDB
-      savedRoutesFromDb.value = data;
-    }
+    // axios sends the login token (saved routes are only for people on the trip)
+    const res = await axios.get('/api/directions/saved', { params: { tripId } });
+    // Directly assign the fresh array from MongoDB
+    savedRoutesFromDb.value = res.data;
   } catch (err) {
     console.error('Failed to load saved routes from DB:', err);
   }

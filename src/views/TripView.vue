@@ -136,7 +136,7 @@
           :initial-stops="itineraryInfo.stops"
           :initial-wishlist="itineraryInfo.wishlist" :initial-version="isDemo ? 0 : trip.version || 0" :travellers="itineraryInfo.travellers"
           @itinerary-change="updatePackingActivities" @set-end-date="setEndDate" @go-places="addFromItinerary"
-          @open-transport="activeTab = 'travelOptions'" />
+          @open-transport="activeTab = 'travelOptions'" @weather-change="forecastWeather = $event" />
       </div>
       <!-- Places = Wishlist + Group decisions. Both use the same wishlist, which the itinerary saves. -->
       <div v-show="activeTab === 'places'" :id="'pane-places'" role="tabpanel" :class="{ 'has-return': returnTo }">
@@ -167,7 +167,7 @@
           :weather="isDemo ? ['mild', 'rain'] : trip.weather || []"
           :extras="isDemo ? [] : trip.extras || []"
           :initial-packing="isDemo ? null : trip.packing"
-          :has-outdoor-activity="hasOutdoorActivity" />
+          :has-outdoor-activity="hasOutdoorActivity" :forecast-weather="forecastWeather" />
       </div>
       <div v-show="activeTab === 'expenses'" id="pane-expenses" role="tabpanel">
         <ExpensesView :key="'xp-' + id" :trip-id="id" :travellers="itineraryInfo.travellers"
@@ -271,6 +271,7 @@ export default {
       showGuide: this.$route.query.welcome === '1',
       hasOutdoorActivity: true,
       safetyWarning: '',
+      forecastWeather: [], // packing weather keys from the itinerary's forecast, e.g. ['hot', 'rain']
       trip: null,
       loading: true,
       loadError: '',
@@ -344,9 +345,13 @@ export default {
       }
       return list
     },
-    // The risk banner on every tab, unless "Hazard advisories" is off in Settings
+    // The risk banner on every tab: only from 2 weeks before the trip until it ends (the Safety tab
+    // always shows the details), and not if "Hazard advisories" is off in Settings
     shownWarning() {
-      return userSettings.hazardAlerts ? this.safetyWarning : ''
+      if (!userSettings.hazardAlerts || this.tripPhase === 'after') return ''
+      const start = this.itineraryInfo.startDate
+      if (start && (new Date(start + 'T00:00:00') - new Date(localDate() + 'T00:00:00')) / 86400000 > 14) return ''
+      return this.safetyWarning
     },
     joinedNames() {
       if (this.isDemo) return ['Sarah', 'John', 'Amy']

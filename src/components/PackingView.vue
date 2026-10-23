@@ -65,6 +65,13 @@
         </div>
       </div>
 
+      <!-- The forecast says something different from what was picked: one tap to use it -->
+      <p v-if="forecastDiffers" class="pk-forecast small" data-testid="packing-forecast">
+        The forecast for your dates says
+        <span v-for="t in forecastTags" :key="t.key" class="pk-tag"><Icon3D :emoji="t.icon" :size="16" /> {{ t.label }}</span>
+        <button type="button" class="pk-link" @click="useForecast">Use the forecast</button>
+      </p>
+
       <!-- Built from: tap Edit to change -->
       <div class="pk-profile">
         <span class="pk-muted small">Built for {{ days }} day{{ days === 1 ? '' : 's' }}<span v-if="profileTags.length">:</span></span>
@@ -141,7 +148,8 @@ export default {
     weather: { type: Array, default: () => [] },
     extras: { type: Array, default: () => [] },
     initialPacking: { type: Object, default: null },
-    hasOutdoorActivity: { type: Boolean, default: false }
+    hasOutdoorActivity: { type: Boolean, default: false },
+    forecastWeather: { type: Array, default: () => [] } // what the forecast / typical weather says, e.g. ['hot', 'rain']
   },
 
   data() {
@@ -242,6 +250,14 @@ export default {
       return this.items.length ? Math.round((this.packedCount / this.items.length) * 100) : 0
     },
 
+    forecastTags() {
+      return WEATHER.filter((w) => this.forecastWeather.includes(w.key))
+    },
+    forecastDiffers() {
+      const a = this.forecastWeather.slice().sort().join()
+      return !!a && a !== this.profile.weather.slice().sort().join()
+    },
+
     // Everything worth saving, as text (changes whenever something changes)
     saveKey() {
       return JSON.stringify({ ...this.profile, packing: this.packing })
@@ -249,6 +265,10 @@ export default {
   },
 
   watch: {
+    // Adaptive packing: nobody picked the weather yet, so the forecast picks it (it can still be edited)
+    forecastWeather(keys) {
+      if (keys.length && !this.profile.weather.length && this.tripId && this.tripId !== 'seoul') this.useForecast()
+    },
     saveKey(key) {
       if (!this.tripId || this.tripId === 'seoul' || key === this.lastSaved) return // the demo trip isn't saved
       this.saveStatus = 'Saving…'
@@ -272,6 +292,10 @@ export default {
   },
 
   methods: {
+    useForecast() {
+      this.profile.weather = this.forecastWeather.slice()
+    },
+
     toggleOption(list, key) {
       const i = list.indexOf(key)
       if (i >= 0) list.splice(i, 1)
@@ -346,6 +370,14 @@ export default {
 </script>
 
 <style scoped>
+.pk-forecast {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
 .pk-muted {
   color: var(--app-muted, #5a6b78);
 }

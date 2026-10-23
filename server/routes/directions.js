@@ -1,5 +1,7 @@
 import express from 'express';
 import SavedRoute from '../models/transport.js';
+import { requireAuth } from './auth.js';
+import { findTripFor } from '../tripAccess.js';
 const router = express.Router();
 
 // different transport modes
@@ -142,6 +144,11 @@ async function fetchMode(origin, destination, { mode, allowedModes, fallbackType
 
             flushWalk(); // walking at the very end of the trip
 
+            // Only walking (no bus or train at all) is not a transit option: the Walk row covers it
+            if (!hasBus && !hasTrain) {
+                return null;
+            }
+
             if (hasBus && hasTrain) {
                 dynamicType = 'Bus & Train';
             } else if (hasTrain) {
@@ -182,7 +189,7 @@ async function fetchMode(origin, destination, { mode, allowedModes, fallbackType
 }
 
 // fetch route options from Google
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
     const { origin, destination, time, timeType } = req.query;
     
     if (!origin || !destination) {
@@ -224,12 +231,16 @@ router.get('/', async (req, res) => {
 });
 
 // read the saved routes from the database
-router.get('/saved', async (req, res) => {
+router.get('/saved', requireAuth, async (req, res) => {
     try {
         const tripId = req.query.tripId;
 
         if (!tripId) {
             return res.status(400).json({error: 'tripId is required'});
+        }
+        // only people on the trip can see its routes
+        if (!await findTripFor(req.userId, tripId)) {
+            return res.status(404).json({error: 'Trip not found'});
         }
 
         const savedRoutes = await SavedRoute.findByTripId(tripId);
@@ -241,23 +252,22 @@ router.get('/saved', async (req, res) => {
 });
 
 //  save or unsave one route option
-router.post('/toggle', async (req, res) => {
-    console.log('--- BACKEND RECEIVED /toggle REQUEST ---');
-    console.log('req.body:', req.body);
-
+router.post('/toggle', requireAuth, async (req, res) => {
     const tripId = req.body.tripId;
     const start = req.body.start;
     const end = req.body.end;
     const option = req.body.option;
 
     if (!tripId || !start || !end || !option){
-        console.warn('⚠️ Backend Guard Triggered: Missing parameters in req.body'); 
         return res.status(400).json({error: 'Missing required parameters'});
+    }
+    // only people on the trip can save its routes
+    if (!await findTripFor(req.userId, tripId)) {
+        return res.status(404).json({error: 'Trip not found'});
     }
 
     try {
         const result = await SavedRoute.toggleOption({ tripId, start, end, option });
-        console.log('--- BACKEND TOGGLE RESULT:', result);
         res.json(result);
     } catch(error) {
         console.error('Error unsaving route:', error);

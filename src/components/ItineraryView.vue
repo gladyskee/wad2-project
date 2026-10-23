@@ -9,6 +9,12 @@
     <!-- Smart Schedule: hours, crowds, buffer, and what the scheduler is doing -->
     <SchedulePanel :save-status="saveStatus" :status="plannerStatus" />
 
+    <!-- Weather: the live forecast, or made-up days for a demo (only on this browser) -->
+    <p class="weather-mode small">
+      <label><input v-model="simulateWeather" type="checkbox" data-testid="simulate-weather"> Simulate weather (demo)</label>
+      <span v-if="weatherError && !simulateWeather" class="text-muted"> · Live forecast unavailable right now</span>
+    </p>
+
     <!-- The itinerary: day navigator, timeline with weather + crowd icons, saved places drawer -->
     <ItineraryPlanner :days="dayList" :selected-date="selectedDate" :stops="itinerary"
       :wishlist="allWishlist" :scheduled-names="scheduledNames" :day-name="tripDay" :weather-blocks="dayWeather" :typical="typicalWeather" :prefs="dayPrefs"
@@ -26,11 +32,21 @@ import ItineraryPlanner from './ItineraryPlanner.vue'
 import { prefs, loadPreferences } from '../preferences.js'
 import { getForecast } from '../crowd.js'
 import { fetchTravelTime } from '../services/maps.js'
-import { fetchWeatherForecast } from '../services/weatherService.js'
+import { fetchWeatherForecast, packingWeather } from '../services/weatherService.js'
 import { trip, loadDemo, loadFromServer, savedShape, savedBase, markSaved, runtimeStop, newId } from '../itineraryStore.js'
 import { savedRoutesFromDb, fetchSavedRoutes } from '../savedRoutes.js'
 import { codeForDestination, COUNTRY_CODES } from '../destinations.js'
 import DISCOVER from '../data/discoverCities.json'
+
+// "Simulate weather" is remembered on this browser (the demo trip always simulates)
+function readSimulate(tripId) {
+  if (tripId === 'seoul') return true
+  try {
+    return localStorage.getItem('chuise-simulate-weather') === '1'
+  } catch (err) {
+    return false
+  }
+}
 
 // Everyone's votes, as text (to notice new votes from the group)
 function votesKey(list) {
@@ -45,7 +61,7 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 
 export default {
   components: { SchedulePanel, ItineraryPlanner },
-  emits: ['itinerary-change', 'set-end-date', 'go-places', 'open-transport'],
+  emits: ['itinerary-change', 'set-end-date', 'go-places', 'open-transport', 'weather-change'],
   props: {
     tripId: { type: String, default: 'seoul' }, // 'seoul' = the demo trip (not saved)
     destination: { type: String, default: '' },
@@ -63,6 +79,7 @@ export default {
       plannerStatus: { kind: 'idle', text: 'Add places to this day and the schedule balances itself.' },
       weather: [], // every forecast entry: { date, time, span, condition, rain }
       weatherError: false,
+      simulateWeather: readSimulate(this.tripId), // demo: made-up weather instead of the live forecast
       climate: [], // typical weather by month for each destination (for days beyond the 5-day forecast)
       climateRetried: false,
       mapsOff: false, // true once the server says Google Maps isn't set up
@@ -85,12 +102,7 @@ export default {
     const firstStopDay = trip.stops.map((s) => s.date).sort()[0]
     this.selectedDate = firstStopDay || this.dayList[0] || ''
 
-    // Load simulated weather for every day of the trip
-    try {
-      this.weather = await fetchWeatherForecast({ dates: this.dayList })
-    } catch (err) {
-      this.weatherError = true
-    }
+    await this.loadWeather()
 
     // The user's saved preferences (keeps the defaults if this fails)
     try {
@@ -130,6 +142,14 @@ export default {
   },
 
   watch: {
+    simulateWeather(on) {
+      try {
+        localStorage.setItem('chuise-simulate-weather', on ? '1' : '0')
+      } catch (err) {
+        // private mode: just for this visit
+      }
+      this.loadWeather()
+    },
     // If typical weather couldn't load (e.g. the server was restarting), try again when the day changes
     selectedDate() {
       if (!this.climate.length) this.loadClimate()
@@ -579,6 +599,7 @@ export default {
       try {
         const res = await axios.get('/api/discover/cities', { params: { names: names.join('|'), codes: codes.join('|') } })
         this.climate = Array.isArray(res.data) ? res.data : []
+        this.reportWeather()
       } catch (err) {
         this.climate = [] // days beyond the forecast show "–" for now
       }
@@ -589,6 +610,20 @@ export default {
       }
     },
     // ---------- weather ----------
+    // The live forecast for the first destination (or the demo weather), then tell Packing what to expect
+    async loadWeather() {
+      try {
+        this.weather = await fetchWeatherForecast({ q: this.destination, dates: this.dayList, simulate: this.simulateWeather })
+        this.weatherError = false
+      } catch (err) {
+        this.weather = []
+        this.weatherError = true
+      }
+      this.reportWeather()
+    },
+    reportWeather() {
+      this.$emit('weather-change', packingWeather({ blocks: this.weather, climate: this.climate, dates: this.dayList }))
+    },
 
     // ---------- transit ----------
     // Travel time from every stop to the next (all requests run at once)
@@ -633,6 +668,15 @@ export default {
 </script>
 
 <style scoped>
+.weather-mode {
+  margin: 0 0 12px;
+  color: var(--app-muted, #5a6b78);
+}
+
+.weather-mode input {
+  margin-right: 6px;
+}
+
 .notice-popup {
   position: fixed;
   top: 70px;                 /* just below the navbar */

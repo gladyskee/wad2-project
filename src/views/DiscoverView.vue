@@ -16,7 +16,7 @@
           </nav>
           <h1 v-else class="dx-title">Where to next?</h1>
           <p v-if="openName" class="dx-sub">Tap ‹ or press Esc to see all countries</p>
-          <p v-else class="dx-sub">{{ visibleCities.length }} places across {{ groups.length }} countries, ranked for you</p>
+          <p v-else class="dx-sub">{{ visibleCities.length }} {{ visibleCities.length === 1 ? 'place' : 'places' }} across {{ groups.length }} {{ groups.length === 1 ? 'country' : 'countries' }}, ranked for you</p>
         </div>
       </div>
       <div class="dx-filters" data-tour="vibe-filters">
@@ -980,9 +980,14 @@ function clearSearch() {
 function closeSuggest() {
   setTimeout(() => { suggestOpen.value = false }, 120)
 }
+// The map keeps focus in the search box when it's clicked (no blur), so close on any press outside it
+function closeSuggestOutside(e) {
+  if (!e.target.closest('.dx-search')) suggestOpen.value = false
+}
 onMounted(() => {
   document.addEventListener('keydown', onKey)
   document.addEventListener('click', closeVibes)
+  document.addEventListener('pointerdown', closeSuggestOutside)
   document.body.classList.add('dx-body')
   if (auth.token) syncShortlist() // picks saved on another device show up here too
   loadPhotos()
@@ -995,6 +1000,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey)
   document.removeEventListener('click', closeVibes)
+  document.removeEventListener('pointerdown', closeSuggestOutside)
   document.body.classList.remove('dx-body')
   if (topWatcher) topWatcher.disconnect()
   clearTimeout(tipTimer)
