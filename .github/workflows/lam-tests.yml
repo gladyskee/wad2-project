@@ -1,7 +1,7 @@
 name: Lam tests
 
 # Lam's features: Packing + Photos. One step per test file, named after what it checks;
-# open a step to see every case with ✓ / ×. The "📋 Results" step lists every case and its result together
+# open a step to see every case with ✓ / ×. The "Results" step lists every case and its result together
 # (also on the run's Summary page). A failing E2E test prints a DEBUG block (page address, what the page said,
 # failed requests) in its step, and screenshots + traces are uploaded as the "lam-e2e-failures" artifact.
 on:
@@ -59,7 +59,7 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_FILE: reports/lam/5.json
         run: pnpm exec playwright test tests/lam/e2e/photos.spec.js --reporter=list,json
 
-      - name: "📋 Results: every test case and its result"
+      - name: "Results: every test case and its result"
         if: ${{ !cancelled() }}
         run: node tests/shared/report.mjs reports/lam "Lam tests: Packing + Photos"
 

@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, appendFileSync, existsSync } from 'node:fs'
 
 const DIR = process.argv[2]
 const TITLE = process.argv[3] || DIR
-const ICON = { passed: '✅', failed: '❌', skipped: '⏭️' }
+const ICON = { passed: 'PASS', failed: 'FAIL', skipped: 'SKIP' }
 const clean = (s) => String(s || '').replace(/\u001b\[[0-9;]*m/g, '').split('\n').find((l) => l.trim()) || ''
 
 // -> [{ title, cases: [{ name, status, why }] }]
@@ -64,8 +64,8 @@ for (const g of groups) {
 }
 if (!groups.some((g) => g.title.startsWith('E2E'))) {
   const note = 'E2E tests did not run (no E2E_USERNAME / E2E_PASSWORD).'
-  log.push('', '⏭️ ' + note)
-  md.push('⏭️ ' + note, '')
+  log.push('', 'SKIP: ' + note)
+  md.push('SKIP: ' + note, '')
 }
 const line = `TOTAL: ${total.passed} passed, ${total.failed} failed, ${total.skipped} skipped`
 md.push(`**${line}**`)
