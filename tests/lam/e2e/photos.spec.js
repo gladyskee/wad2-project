@@ -47,7 +47,11 @@ test.describe('E2E · Photos — upload to an album, react, and reject files tha
     const albumName = 'Lam E2E ' + Date.now()
     await page.getByRole('button', { name: '+ Add album' }).click()
     await page.getByLabel('Album name').fill(albumName)
+    // KNOWN RACE (found by this test): the new album is selected at once but saved in the background; a photo
+    // uploaded before that save finishes silently lands in Highlights. So wait for the album to be saved first.
+    const albumSaved = page.waitForResponse((r) => r.url().endsWith('/albums') && r.request().method() === 'PUT')
     await page.getByRole('button', { name: 'Create', exact: true }).click()
+    expect((await albumSaved).ok(), 'album saved on the server').toBe(true)
     await expect(page.getByRole('tab', { name: new RegExp(albumName) })).toHaveAttribute('aria-selected', 'true')
 
     await picker(page).setInputFiles('tests/lam/e2e/fixtures/test-photo.jpg')

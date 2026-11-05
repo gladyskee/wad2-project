@@ -7,9 +7,9 @@
 
  | Case | User does                                                        | Expected                                       |
  |------|------------------------------------------------------------------|------------------------------------------------|
- | H1   | "Add a tour": "E2E tea ceremony", link "klook.com/activity/123"   | card shows "Tour"; still there after reload;   |
+ | H1   | "Add a tour": "E2E tea ceremony", link "klook.com/activity/123"   | card shows "Booked · Klook"; kept after reload;|
  |      |                                                                  | booking link opens https://klook.com/...       |
- | H2   | Removes that tour, reloads                                        | gone after reload                              |
+ | H2   | Adds a tour, then removes it, reloads                             | gone after reload                              |
  | U1   | "Add a tour" with link "not a link"                               | error shown; nothing added (also after reload) |
 */
 
@@ -54,7 +54,7 @@ test.describe('E2E · Wishlist — booked tours are saved for the group, removed
 
     const tourCard = page.locator('.wl-card', { hasText: TOUR })
     await expect(tourCard).toBeVisible()
-    await expect(tourCard).toContainText('Tour')
+    await expect(tourCard).toContainText('Booked · Klook') // the app spots Klook from the link
     await expect.poll(savedWishlist, { message: 'tour saved on the server', timeout: 15000 }).toContain(TOUR)
 
     await page.reload()
@@ -62,15 +62,19 @@ test.describe('E2E · Wishlist — booked tours are saved for the group, removed
     await expect(page.getByRole('link', { name: 'Open booking for ' + TOUR })).toHaveAttribute('href', 'https://klook.com/activity/123')
   })
 
-  test('H2: removing the tour removes it for everyone (gone after a reload)', async ({ page }) => {
+  test('H2: removing a tour removes it for everyone (gone after a reload)', async ({ page }) => {
+    const name = 'E2E tour to remove'
     await openWishlist(page)
-    await page.getByRole('button', { name: 'Remove ' + TOUR + ' from wishlist' }).click()
-    await expect(page.locator('.wl-card', { hasText: TOUR })).toHaveCount(0)
-    await expect.poll(savedWishlist, { message: 'tour removed on the server', timeout: 15000 }).not.toContain(TOUR)
+    await fillTour(page, name, 'klook.com/activity/456') // its own tour, so it doesn't depend on H1
+    await expect.poll(savedWishlist, { message: 'tour saved on the server', timeout: 15000 }).toContain(name)
+
+    await page.getByRole('button', { name: 'Remove ' + name + ' from wishlist' }).click()
+    await expect(page.locator('.wl-card', { hasText: name })).toHaveCount(0)
+    await expect.poll(savedWishlist, { message: 'tour removed on the server', timeout: 15000 }).not.toContain(name)
 
     await page.reload()
     await expect(page.getByRole('heading', { name: /Your wishlist/ })).toBeVisible({ timeout: 20000 })
-    await expect(page.locator('.wl-card', { hasText: TOUR })).toHaveCount(0)
+    await expect(page.locator('.wl-card', { hasText: name })).toHaveCount(0)
   })
 
   test('U1: a tour with a broken booking link is refused and never saved', async ({ page }) => {
