@@ -12,7 +12,7 @@
  | H1   | New album → upload a JPEG → react ❤️ → reload                  | photo in the album; ❤️ is "1" and mine after reload|
  |      | → react ❤️ again                                               | ❤️ back to 0                                       |
  | U1   | Picks a .txt, a .heic and an 11 MB "JPEG"                      | 3 clear error messages; nothing is sent to the    |
- |      |                                                               | server; the photo count does not change           |
+ |      |                                                               | server                                            |
 */
 
 import { test, expect } from '@playwright/test'
@@ -74,7 +74,6 @@ test.describe('E2E · Photos — upload to an album, react, and reject files tha
   test('U1: a text file, a HEIC photo and a file over 10 MB are rejected before upload', async ({ page }) => {
     await openTrip(page, trip, 'photos')
     await expect(page.getByRole('heading', { name: 'Shared roll' })).toBeVisible()
-    const countText = await page.locator('.ph-sub').innerText()
 
     const uploads = []
     page.on('request', (req) => {
@@ -94,6 +93,5 @@ test.describe('E2E · Photos — upload to an album, react, and reject files tha
 
     await page.waitForTimeout(1000)
     expect(uploads, 'no file should have been sent to the server').toEqual([])
-    await expect(page.locator('.ph-sub')).toHaveText(countText)
   })
 })

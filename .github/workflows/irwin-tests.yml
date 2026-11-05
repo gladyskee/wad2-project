@@ -53,7 +53,7 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_FILE: reports/irwin/4.json
         run: pnpm exec playwright test tests/irwin/e2e/voting.spec.js --reporter=list,json
 
-      - name: "E2E · Wishlist: tours saved for the group, removed, bad links refused"
+      - name: "E2E · Wishlist: tours with bad booking links are refused"
         if: ${{ !cancelled() }}
         env:
           PLAYWRIGHT_JSON_OUTPUT_FILE: reports/irwin/5.json
