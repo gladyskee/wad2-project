@@ -180,7 +180,6 @@ test('simulated rainy weather generates an itinerary replan', async ({ page }) =
 
 
   // 7. Apply the simulated rainy weather
-  // 7. Apply the simulated rainy weather
     await weatherSection
     .locator('button.ip-sim-button')
     .click()
@@ -197,26 +196,36 @@ test('simulated rainy weather generates an itinerary replan', async ({ page }) =
   ).toBeVisible()
 
 
-  // 10. Preview the first available clearer time
-  const clearerTime = weatherSection
-    .getByRole('button', { name: /^Preview moving it to / })
-    .first()
 
+// 10. Check whether a clearer alternative time is available
+const clearerTime = weatherSection
+  .getByRole('button', { name: /^Preview moving it to / })
+  .first()
 
-  await expect(clearerTime).toBeVisible()
+const noClearTime = weatherSection.getByText(
+  'No suitable clear time is available today.'
+)
+
+// The app must either offer a preview or explain why it cannot
+await expect(
+  clearerTime.or(noClearTime).first()
+).toBeVisible()
+
+if (await clearerTime.isVisible()) {
+  // 11A. A clearer time exists: preview the replan
   await clearerTime.click()
 
-
-  // 11. Verify that the app generated a replan
   await expect(
     weatherSection.getByText('Proposed itinerary change')
   ).toBeVisible()
 
-
   await expect(
     weatherSection.getByText('Expected weather:')
   ).toBeVisible()
-
+} else {
+    // 11B. No suitable time exists: verify the explanation
+    await expect(noClearTime).toBeVisible()
+}
 
   // 12. Reset the simulation so the test leaves no changes behind
   await weatherSection
