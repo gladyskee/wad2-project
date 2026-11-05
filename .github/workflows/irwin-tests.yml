@@ -61,7 +61,7 @@ jobs:
 
       - name: "Results: every test case and its result"
         if: ${{ !cancelled() }}
-        run: node tests/shared/report.mjs reports/irwin "Irwin tests: Group Voting + Wishlist"
+        run: node tests/shared/report.mjs reports/irwin "Irwin tests - Group Voting + Wishlist"
 
       - name: Upload E2E failure screenshots and traces
         if: ${{ failure() }}
