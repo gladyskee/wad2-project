@@ -64,7 +64,7 @@ test.describe('E2E · Group voting — votes are saved, make group picks, and on
 
   test('H2: the organiser\'s vote for guest Gran makes it 2 of 2 — a group pick, kept after reload', async ({ page }) => {
     await openVoting(page)
-    const gran = card(page, 'Fushimi Inari').getByTestId('vote-btn').filter({ hasText: 'Gran' })
+    const gran = card(page, 'Fushimi Inari').getByTestId('vote-btn').filter({ hasText: 'Gran' }).first() // the card briefly exists twice while it moves to "Group picks"
     await gran.click()
     await expect(gran).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('vote-summary')).toHaveText('✓ 1 group pick')
