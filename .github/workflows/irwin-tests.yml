@@ -1,0 +1,72 @@
+name: Irwin tests
+
+# Irwin's features: Group Voting + Wishlist. One step per test file, named after what it checks;
+# open a step to see every case with ✓ / ×. The "Results" step lists every case and its result together
+# (also on the run's Summary page). A failing E2E test prints a DEBUG block (page address, what the page said,
+# failed requests) in its step, and screenshots + traces are uploaded as the "irwin-e2e-failures" artifact.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Irwin · Group Voting + Wishlist
+    runs-on: ubuntu-latest
+    env:
+      VITE_CONFIG_NATIVE_IGNORE_WARNING: 'true'
+      # Student project test account (agreed to be kept in the repo). E2E runs against the deployed site.
+      E2E_BASE_URL: https://wad2-project-teal.vercel.app
+      E2E_USERNAME: E2E_Irwin
+      E2E_PASSWORD: Test123!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: "Unit · voting rules: majority for a group pick, adding / taking back votes"
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run tests/irwin/unit/votingRules.spec.js --reporter=tree --reporter=json --outputFile.json=reports/irwin/1.json
+
+      - name: "Component · PlacesVoting: vote, group picks, saving, undo"
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run tests/irwin/component/PlacesVoting.spec.js --reporter=tree --reporter=json --outputFile.json=reports/irwin/2.json
+
+      - name: "Component · WishlistView: filter, remove, add booked tours"
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run tests/irwin/component/WishlistView.spec.js --reporter=tree --reporter=json --outputFile.json=reports/irwin/3.json
+
+      - name: Install browser for E2E
+        if: ${{ !cancelled() }}
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: "E2E · Voting: votes saved, group picks, only allowed votes"
+        if: ${{ !cancelled() }}
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: reports/irwin/4.json
+        run: pnpm exec playwright test tests/irwin/e2e/voting.spec.js --reporter=list,json
+
+      - name: "E2E · Wishlist: tours with bad booking links are refused"
+        if: ${{ !cancelled() }}
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: reports/irwin/5.json
+        run: pnpm exec playwright test tests/irwin/e2e/wishlist.spec.js --reporter=list,json
+
+      - name: "Results: every test case and its result"
+        if: ${{ !cancelled() }}
+        run: node tests/shared/report.mjs reports/irwin "Irwin tests - Group Voting + Wishlist"
+
+      - name: Upload E2E failure screenshots and traces
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: irwin-e2e-failures
+          path: test-results/
+          if-no-files-found: ignore

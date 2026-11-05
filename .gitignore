@@ -16,3 +16,5 @@ dist/
 # Playwright generated files
 test-results/
 playwright-report/
+# Lam test reports (JSON, made by the Lam tests workflow)
+reports/

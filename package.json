@@ -5,7 +5,12 @@
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
-    "test:lam": "vitest run tests/lam",
+    "test:lam": "vitest run tests/lam --reporter=tree",
+    "test:lam:e2e": "playwright test tests/lam --reporter=list",
+    "test:irwin": "vitest run tests/irwin --reporter=tree",
+    "test:irwin:e2e": "playwright test tests/irwin --reporter=list",
+    "test:jeron": "vitest run tests/jeron --reporter=tree",
+    "test:jeron:e2e": "playwright test tests/jeron --reporter=list",
     "test:gladys": "vitest run tests/gladys",
     "test:gladys:e2e": "playwright test tests/gladys",
     "test:kay": "vitest run tests/kay",

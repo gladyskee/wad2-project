@@ -1,0 +1,72 @@
+name: Jeron tests
+
+# Jeron's features: Safety + Crew. One step per test file, named after what it checks;
+# open a step to see every case with ✓ / ×. The "Results" step lists every case and its result together
+# (also on the run's Summary page). A failing E2E test prints a DEBUG block (page address, what the page said,
+# failed requests) in its step, and screenshots + traces are uploaded as the "jeron-e2e-failures" artifact.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Jeron · Safety + Crew
+    runs-on: ubuntu-latest
+    env:
+      VITE_CONFIG_NATIVE_IGNORE_WARNING: 'true'
+      # Student project test account (agreed to be kept in the repo). E2E runs against the deployed site.
+      E2E_BASE_URL: https://wad2-project-teal.vercel.app
+      E2E_USERNAME: E2E_Jeron
+      E2E_PASSWORD: Test123!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: "Unit · safety rules: risk score, open now, emergency numbers"
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run tests/jeron/unit/safetyRules.spec.js --reporter=tree --reporter=json --outputFile.json=reports/jeron/1.json
+
+      - name: "Component · SafetyRadar: help nearby by distance and direction"
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run tests/jeron/component/SafetyRadar.spec.js --reporter=tree --reporter=json --outputFile.json=reports/jeron/2.json
+
+      - name: "Component · TripShare: invite by username or join link"
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run tests/jeron/component/TripShare.spec.js --reporter=tree --reporter=json --outputFile.json=reports/jeron/3.json
+
+      - name: Install browser for E2E
+        if: ${{ !cancelled() }}
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: "E2E · Safety: emergency numbers, simulations kept apart"
+        if: ${{ !cancelled() }}
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: reports/jeron/4.json
+        run: pnpm exec playwright test tests/jeron/e2e/safety.spec.js --reporter=list,json
+
+      - name: "E2E · Crew: join link, invite by username, wrong usernames"
+        if: ${{ !cancelled() }}
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: reports/jeron/5.json
+        run: pnpm exec playwright test tests/jeron/e2e/crew.spec.js --reporter=list,json
+
+      - name: "Results: every test case and its result"
+        if: ${{ !cancelled() }}
+        run: node tests/shared/report.mjs reports/jeron "Jeron tests - Safety + Crew"
+
+      - name: Upload E2E failure screenshots and traces
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jeron-e2e-failures
+          path: test-results/
+          if-no-files-found: ignore

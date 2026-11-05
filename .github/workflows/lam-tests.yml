@@ -1,5 +1,9 @@
 name: Lam tests
 
+# Lam's features: Packing + Photos. One step per test file, named after what it checks;
+# open a step to see every case with ✓ / ×. The "Results" step lists every case and its result together
+# (also on the run's Summary page). A failing E2E test prints a DEBUG block (page address, what the page said,
+# failed requests) in its step, and screenshots + traces are uploaded as the "lam-e2e-failures" artifact.
 on:
   push:
     branches: [main]
@@ -8,7 +12,14 @@ on:
 
 jobs:
   test:
+    name: Lam · Packing + Photos
     runs-on: ubuntu-latest
+    env:
+      VITE_CONFIG_NATIVE_IGNORE_WARNING: 'true'
+      # Student project test account (agreed to be kept in the repo). E2E runs against the deployed site.
+      E2E_BASE_URL: https://wad2-project-teal.vercel.app
+      E2E_USERNAME: E2E_Lam
+      E2E_PASSWORD: Test123!
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -18,10 +29,44 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            server/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm install --frozen-lockfile
-        working-directory: server
-      - run: pnpm test:lam
+
+      - name: "Unit · buildPackingList: suggested items from trip length, weather, activities"
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run tests/lam/unit/packingList.spec.js --reporter=tree --reporter=json --outputFile.json=reports/lam/1.json
+
+      - name: "Component · PackingView: tick, amounts, own items, saving"
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run tests/lam/component/PackingView.spec.js --reporter=tree --reporter=json --outputFile.json=reports/lam/2.json
+
+      - name: "Component · TripRecap: trip numbers and money spent together"
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run tests/lam/component/TripRecap.spec.js --reporter=tree --reporter=json --outputFile.json=reports/lam/3.json
+
+      - name: Install browser for E2E
+        if: ${{ !cancelled() }}
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: "E2E · Packing: progress and own items survive a reload"
+        if: ${{ !cancelled() }}
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: reports/lam/4.json
+        run: pnpm exec playwright test tests/lam/e2e/packing.spec.js --reporter=list,json
+
+      - name: "E2E · Photos: upload, react, reject bad files"
+        if: ${{ !cancelled() }}
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: reports/lam/5.json
+        run: pnpm exec playwright test tests/lam/e2e/photos.spec.js --reporter=list,json
+
+      - name: "Results: every test case and its result"
+        if: ${{ !cancelled() }}
+        run: node tests/shared/report.mjs reports/lam "Lam tests - Packing + Photos"
+
+      - name: Upload E2E failure screenshots and traces
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lam-e2e-failures
+          path: test-results/
+          if-no-files-found: ignore
